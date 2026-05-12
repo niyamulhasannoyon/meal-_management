@@ -15,6 +15,7 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
+  ComposedChart,
   AreaChart, 
   Area 
 } from 'recharts';
@@ -54,7 +55,7 @@ export default function Dashboard() {
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
     
     let mealsRaw: any[] = [];
-    let bazarAmount = 0;
+    let bazarRaw: any[] = [];
     let finesData: Record<string, number> = {};
 
     const updateStats = () => {
@@ -66,7 +67,9 @@ export default function Dashboard() {
       const totalRegularMeals = Object.values(mealsMap).reduce((a, b) => (a as number) + (b as number), 0);
       const totalFines = Object.values(finesData).reduce((a, b) => a + b, 0);
       const tMeals = totalRegularMeals + totalFines;
-      const tBazar = bazarAmount;
+      
+      let tBazar = 0;
+      bazarRaw.forEach(b => tBazar += b.amount);
 
       setStats({
         mealRate: tMeals > 0 ? tBazar / tMeals : 0,
@@ -74,17 +77,32 @@ export default function Dashboard() {
         totalBazar: tBazar
       });
 
+      let cumulativeMeals = 0;
+      let cumulativeBazar = 0;
+
       const formattedChartData = days.map(day => {
         const dateStr = format(day, "yyyy-MM-dd");
-        let dayTotal = 0;
+        let dayTotalMeals = 0;
         mealsRaw.forEach(m => {
           if (m.date === dateStr) {
-            dayTotal += m.totalMeals || 0;
+            dayTotalMeals += m.totalMeals || 0;
           }
         });
+
+        let dayBazar = 0;
+        bazarRaw.forEach(b => {
+          if (b.date === dateStr) {
+            dayBazar += b.amount || 0;
+          }
+        });
+
+        cumulativeMeals += dayTotalMeals;
+        cumulativeBazar += dayBazar;
+
         return {
           name: format(day, "dd"),
-          meals: dayTotal
+          meals: dayTotalMeals,
+          rate: cumulativeMeals > 0 ? Number((cumulativeBazar / cumulativeMeals).toFixed(2)) : 0
         };
       }).filter(d => parseInt(d.name) <= parseInt(format(new Date(), "dd")));
       
@@ -104,18 +122,18 @@ export default function Dashboard() {
     });
 
     const unsubscribeBazar = onSnapshot(collection(db, "bazar_costs"), (snapshot) => {
-      let total = 0;
+      const data: any[] = [];
       snapshot.forEach(doc => {
-        const data = doc.data();
+        const bData = doc.data();
         let dateStr = "";
-        if (typeof data.date === "string") dateStr = data.date;
-        else if (data.date?.toDate) dateStr = format(data.date.toDate(), "yyyy-MM-dd");
+        if (typeof bData.date === "string") dateStr = bData.date;
+        else if (bData.date?.toDate) dateStr = format(bData.date.toDate(), "yyyy-MM-dd");
 
         if (dateStr && dateStr.startsWith(currentMonth)) {
-          total += Number(data.amount) || 0;
+          data.push({ amount: Number(bData.amount) || 0, date: dateStr });
         }
       });
-      bazarAmount = total;
+      bazarRaw = data;
       updateStats();
     });
 
@@ -239,7 +257,7 @@ export default function Dashboard() {
           </div>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+              <ComposedChart data={chartData}>
                 <defs>
                   <linearGradient id="colorMeals" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
@@ -255,27 +273,49 @@ export default function Dashboard() {
                   dy={10}
                 />
                 <YAxis 
+                  yAxisId="left"
                   axisLine={false} 
                   tickLine={false} 
                   tick={{fontSize: 12, fill: '#9ca3af'}}
                 />
+                <YAxis 
+                  yAxisId="right"
+                  orientation="right"
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{fontSize: 12, fill: '#10b981'}}
+                />
                 <Tooltip 
                   contentStyle={{ 
-                    borderRadius: '12px', 
+                    borderRadius: '16px', 
                     border: 'none', 
-                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                    backgroundColor: '#fff' 
+                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                    backdropFilter: 'blur(10px)'
                   }}
+                  itemStyle={{ fontWeight: 'bold' }}
                 />
                 <Area 
+                  yAxisId="left"
                   type="monotone" 
                   dataKey="meals" 
+                  name="Daily Meals"
                   stroke="#6366f1" 
                   strokeWidth={3}
                   fillOpacity={1} 
                   fill="url(#colorMeals)" 
                 />
-              </AreaChart>
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="rate"
+                  name="Meal Rate"
+                  stroke="#10b981"
+                  strokeWidth={3}
+                  dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
+                  activeDot={{ r: 6, strokeWidth: 0 }}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
