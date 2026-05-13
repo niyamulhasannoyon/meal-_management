@@ -41,12 +41,13 @@ export default function LedgerPage() {
   const { profile } = useAuth();
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), "yyyy-MM"));
   const [ledgerUsers, setLedgerUsers] = useState<LedgerUser[]>([]);
-  
+
   const [mealRate, setMealRate] = useState(0);
   const [totalMessMeals, setTotalMessMeals] = useState(0);
   const [totalBazar, setTotalBazar] = useState(0);
+  const [totalDeposits, setTotalDeposits] = useState(0);
   const [isClosed, setIsClosed] = useState(false);
-  
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -63,7 +64,7 @@ export default function LedgerPage() {
     setLoading(true);
     try {
       const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", currentMonth));
-      
+
       if (ledgerDoc.exists()) {
         const data = ledgerDoc.data();
         if (data.isClosed) {
@@ -72,6 +73,7 @@ export default function LedgerPage() {
           setMealRate(data.mealRate);
           setTotalMessMeals(data.totalMeals);
           setTotalBazar(data.totalBazar);
+          setTotalDeposits(data.totalDeposits || (data.users || []).reduce((sum: number, u: any) => sum + (u.deposits || 0), 0));
           setLedgerUsers(data.users || []);
           setLoading(false);
           return;
@@ -80,7 +82,7 @@ export default function LedgerPage() {
 
       // 2. Real-time Calculation if not closed
       setIsClosed(false);
-      
+
       // Fetch all users
       const usersSnap = await getDocs(collection(db, "users"));
       const allUsers: UserProfile[] = [];
@@ -95,12 +97,14 @@ export default function LedgerPage() {
       const mealsSnap = await getDocs(collection(db, "meals"));
       let tMeals = 0;
       const userMealsCount: Record<string, number> = {};
+      const userMealDeposits: Record<string, number> = {};
       mealsSnap.forEach(d => {
         const data = d.data();
         if (data.date && data.date.startsWith(currentMonth)) {
           const meals = Number(data.totalMeals || 0);
           tMeals += meals;
           userMealsCount[data.userId] = (userMealsCount[data.userId] || 0) + meals;
+          userMealDeposits[data.userId] = (userMealDeposits[data.userId] || 0) + Number(data.deposit || 0);
         }
       });
 
@@ -144,7 +148,7 @@ export default function LedgerPage() {
       });
 
       const rate = tMeals > 0 ? tBazar / tMeals : 0;
-      
+
       // Check for manual overrides from the database
       const existingData = ledgerDoc.exists() ? ledgerDoc.data() : null;
       const manualUsersMap: Record<string, any> = {};
@@ -156,24 +160,31 @@ export default function LedgerPage() {
         const uRegularMeals = userMealsCount[u.id] || 0;
         const uFines = userFinesCount[u.id] || 0;
         const uTotalMeals = uRegularMeals + uFines;
-        
+
         const uCost = uTotalMeals * rate;
         const uDirectDep = userDeposits[u.id] || 0;
         const uBazarDep = bazarDeposits[u.id] || 0;
-        const totalDep = uDirectDep + uBazarDep;
-        
-        // If there's a manual override for this user, use it for Deposits
+        const uMealDep = userMealDeposits[u.id] || 0;
+        const totalDep = uDirectDep + uBazarDep + uMealDep;
+
+        // If the month is NOT closed, we ALWAYS use the real-time calculated totalDep.
+        // This ensures that adding money in meals/payments immediately reflects here.
+        // If the month IS closed, we use the frozen value from the ledger document.
         const manualUser = manualUsersMap[u.id];
-        const finalDeposits = manualUser?.deposits !== undefined ? manualUser.deposits : totalDep;
-        
+        const finalDeposits = isClosed ? (manualUser?.deposits ?? totalDep) : totalDep;
+
+        // Use manual cost/meals ONLY if closed or if specifically overridden in the state (handled during editing)
+        const finalCost = isClosed ? (manualUser?.mealCost ?? uCost) : uCost;
+        const finalTotalMeals = isClosed ? (manualUser?.totalMeals ?? uTotalMeals) : uTotalMeals;
+
         return {
           id: u.id,
           name: u.name,
-          totalMeals: uTotalMeals,
+          totalMeals: finalTotalMeals,
           fineMeals: uFines,
-          mealCost: uCost,
+          mealCost: finalCost,
           deposits: finalDeposits,
-          balance: finalDeposits - uCost,
+          balance: finalDeposits - finalCost,
           isSettled: manualUser?.isSettled || false
         };
       });
@@ -182,7 +193,8 @@ export default function LedgerPage() {
       setTotalBazar(tBazar);
       setMealRate(rate);
       setLedgerUsers(calculatedUsers);
-      
+      setTotalDeposits(calculatedUsers.reduce((sum, u) => sum + u.deposits, 0));
+
     } catch (error) {
       console.error("Error fetching ledger:", error);
     } finally {
@@ -193,7 +205,7 @@ export default function LedgerPage() {
   const handleCloseMonth = async () => {
     if (profile?.role === "member") return;
     if (!confirm(`Are you sure you want to CLOSE the meals for ${currentMonth}? This will freeze all calculations.`)) return;
-    
+
     setSaving(true);
     try {
       await setDoc(doc(db, "monthly_ledgers", currentMonth), {
@@ -201,18 +213,19 @@ export default function LedgerPage() {
         mealRate,
         totalMeals: totalMessMeals,
         totalBazar,
+        totalDeposits,
         users: ledgerUsers,
         closedAt: new Date()
       });
       setIsClosed(true);
-      
+
       await logActivity(
         profile?.id || "unknown",
         profile?.name || "Unknown User",
         "CLOSED_MEAL_MONTH",
         `Closed meals calculation for month: ${currentMonth}`
       );
-      
+
       toast.success("Meal calculations closed for this month!");
     } catch (error) {
       console.error("Error closing month:", error);
@@ -232,7 +245,7 @@ export default function LedgerPage() {
         date: new Date(), // using current date for deposit
         receivedBy: profile?.id
       });
-      
+
       const userToDeposit = ledgerUsers.find(u => u.id === userId);
       await logActivity(
         profile?.id || "unknown",
@@ -240,7 +253,7 @@ export default function LedgerPage() {
         "ADDED_MEAL_DEPOSIT",
         `Added meal deposit of ৳${depositAmount} for ${userToDeposit?.name || "Member"}`
       );
-      
+
       toast.success("Deposit added successfully!");
       setDepositAmount("");
       setShowDepositForm(null);
@@ -255,17 +268,17 @@ export default function LedgerPage() {
   const handleSettleDue = async (userId: string) => {
     if (profile?.role === "member") return;
     if (!confirm("Are you sure you want to mark this due as Paid?")) return;
-    
+
     setSaving(true);
     try {
       const updatedUsers = ledgerUsers.map(u => u.id === userId ? { ...u, isSettled: true } : u);
-      
+
       await updateDoc(doc(db, "monthly_ledgers", currentMonth), {
         users: updatedUsers
       });
-      
+
       setLedgerUsers(updatedUsers);
-      
+
       const userToSettle = ledgerUsers.find(u => u.id === userId);
       await logActivity(
         profile?.id || "unknown",
@@ -288,6 +301,7 @@ export default function LedgerPage() {
         mealRate,
         totalMeals: totalMessMeals,
         totalBazar,
+        totalDeposits,
         users: ledgerUsers,
         updatedAt: new Date()
       }, { merge: true });
@@ -317,7 +331,7 @@ export default function LedgerPage() {
   }
 
   return (
-    <motion.main 
+    <motion.main
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8"
@@ -332,8 +346,8 @@ export default function LedgerPage() {
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/50 p-1.5 rounded-lg border border-gray-200 dark:border-gray-700">
-            <input 
-              type="month" 
+            <input
+              type="month"
               value={currentMonth}
               onChange={(e) => setCurrentMonth(e.target.value)}
               className="border-0 bg-transparent text-sm font-medium focus:ring-0 dark:text-white"
@@ -370,11 +384,11 @@ export default function LedgerPage() {
       </div>
 
       {/* Summary Cards */}
-      <motion.div 
+      <motion.div
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 gap-5 sm:grid-cols-3"
+        className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"
       >
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
           <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Mess Meals</dt>
@@ -383,6 +397,10 @@ export default function LedgerPage() {
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
           <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Bazar Cost</dt>
           <dd className="mt-1 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">৳ {totalBazar}</dd>
+        </motion.div>
+        <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
+          <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Deposits</dt>
+          <dd className="mt-1 text-3xl font-bold tracking-tight text-green-600 dark:text-green-400">৳ {totalDeposits}</dd>
         </motion.div>
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-indigo-600 px-4 py-5 shadow-lg shadow-indigo-200 dark:shadow-none sm:p-6">
           <dt className="truncate text-sm font-medium text-indigo-100">Final Meal Rate</dt>
@@ -405,7 +423,7 @@ export default function LedgerPage() {
                 <th className="relative py-4 pl-3 pr-4 sm:pr-6"></th>
               </tr>
             </thead>
-            <motion.tbody 
+            <motion.tbody
               variants={container}
               initial="hidden"
               animate="show"
@@ -451,8 +469,8 @@ export default function LedgerPage() {
                     {profile?.role === "admin" && !isClosed && (
                       showDepositForm === u.id ? (
                         <div className="flex items-center justify-end gap-2">
-                          <input 
-                            type="number" 
+                          <input
+                            type="number"
                             value={depositAmount}
                             onChange={e => setDepositAmount(e.target.value)}
                             placeholder="Amount"
@@ -493,7 +511,7 @@ export default function LedgerPage() {
                         )
                       )
                     )}
-                    
+
                     {isClosed && Math.round(u.balance) >= 0 && (
                       <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
                         Clear

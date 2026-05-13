@@ -313,13 +313,13 @@ export default function MealsPage() {
                       <motion.tr variants={item} key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{user.name}</td>
                         <td className="px-4 py-3 text-center">
-                          <input type="number" step="0.5" min="0" max="2" value={meal.breakfast} onChange={(e) => handleMealChange(user.id, "breakfast", Number(e.target.value))} disabled={!isEditable} className="w-16 rounded-lg border-gray-200 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50" />
+                          <input type="number" step="0.5" min="0" max="2" value={meal.breakfast} onChange={(e) => handleMealChange(user.id, "breakfast", Number(e.target.value) || 0)} disabled={!isEditable} className="w-16 rounded-lg border-gray-200 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50" />
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <input type="number" step="0.5" min="0" max="2" value={meal.lunch} onChange={(e) => handleMealChange(user.id, "lunch", Number(e.target.value))} disabled={!isEditable} className="w-16 rounded-lg border-gray-200 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50" />
+                          <input type="number" step="0.5" min="0" max="2" value={meal.lunch} onChange={(e) => handleMealChange(user.id, "lunch", Number(e.target.value) || 0)} disabled={!isEditable} className="w-16 rounded-lg border-gray-200 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50" />
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <input type="number" step="0.5" min="0" max="2" value={meal.dinner} onChange={(e) => handleMealChange(user.id, "dinner", Number(e.target.value))} disabled={!isEditable} className="w-16 rounded-lg border-gray-200 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50" />
+                          <input type="number" step="0.5" min="0" max="2" value={meal.dinner} onChange={(e) => handleMealChange(user.id, "dinner", Number(e.target.value) || 0)} disabled={!isEditable} className="w-16 rounded-lg border-gray-200 py-1 text-center text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:opacity-50" />
                         </td>
                         <td className="px-4 py-3 text-center font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/30 dark:bg-indigo-900/10">
                           {meal.totalMeals}
