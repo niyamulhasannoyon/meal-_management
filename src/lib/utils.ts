@@ -11,3 +11,13 @@ export const sortUsers = <T extends { name: string }>(usersArray: T[]): T[] => {
     return indexA - indexB;
   });
 };
+
+export const formatCurrency = (value: number | string): string => {
+  const num = Number(value);
+  if (isNaN(num)) return "0";
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(num);
+};
+

@@ -7,7 +7,8 @@ import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format } from "date-fns";
 import { Home, Receipt, Users as UsersIcon, PlusCircle } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
-import { sortUsers } from "@/lib/utils";
+import { sortUsers, formatCurrency } from "@/lib/utils";
+import Avatar from "@/components/layout/Avatar";
 import toast from "react-hot-toast";
 
 import { motion } from "framer-motion";
@@ -65,6 +66,11 @@ export default function RentPage() {
   // Payment state
   const [showPaymentForm, setShowPaymentForm] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
+
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentRef, setPaymentRef] = useState("");
 
   useEffect(() => {
     fetchRentAndUsers();
@@ -174,6 +180,8 @@ export default function RentPage() {
         userId,
         amount: Number(paymentAmount),
         paymentFor: "rent",
+        paymentMethod: paymentMethod,
+        reference: paymentRef || "",
         date: new Date(),
         receivedBy: profile?.id
       });
@@ -183,12 +191,14 @@ export default function RentPage() {
         profile?.id || "unknown",
         profile?.name || "Unknown User",
         "ADDED_RENT_PAYMENT",
-        `Added rent payment of ৳${paymentAmount} for ${userToDeposit?.name || "Member"}`
+        `Added rent payment of ৳${paymentAmount} via ${paymentMethod} for ${userToDeposit?.name || "Member"}`
       );
       
       toast.success("Rent payment added successfully!");
       setPaymentAmount("");
-      setShowPaymentForm(null);
+      setPaymentMethod("Cash");
+      setPaymentRef("");
+      setShowPaymentModal(null);
       fetchRentAndUsers(); // Refresh calculation
     } catch (error) {
       console.error("Error adding payment:", error);
@@ -318,7 +328,7 @@ export default function RentPage() {
             <dl className="space-y-4 text-sm">
               <div className="flex items-center justify-between">
                 <dt className="text-gray-500 dark:text-gray-400">Total Calculation</dt>
-                <dd className="font-bold text-gray-900 dark:text-white">৳ {rentData.totalRent}</dd>
+                <dd className="font-bold text-gray-900 dark:text-white">৳ {formatCurrency(rentData.totalRent)}</dd>
               </div>
               <div className="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-gray-700">
                 <dt className="flex items-center text-gray-500 dark:text-gray-400">
@@ -329,7 +339,7 @@ export default function RentPage() {
               </div>
               <div className="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-gray-700">
                 <dt className="text-base font-bold text-gray-900 dark:text-white">Per Person Rent</dt>
-                <dd className="text-2xl font-black text-green-600 dark:text-green-400">৳ {Math.round(rentData.perPersonRent || 0)}</dd>
+                <dd className="text-2xl font-black text-green-600 dark:text-green-400">৳ {formatCurrency(Math.round(rentData.perPersonRent || 0))}</dd>
               </div>
             </dl>
           </motion.div>
@@ -352,43 +362,32 @@ export default function RentPage() {
                 return (
                   <li key={user.id} className="py-4 flex flex-col gap-2 group">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-900 font-bold dark:text-white group-hover:text-indigo-600 transition-colors">{user.name}</span>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={user.name} size={32} />
+                        <span className="text-gray-900 font-bold dark:text-white group-hover:text-indigo-600 transition-colors">{user.name}</span>
+                      </div>
                       <div className="flex items-center gap-2">
                         {balance >= 0 ? (
                           <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-[10px] font-bold text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                            ✓ Paid {balance > 0 ? `(+৳${balance})` : ""}
+                            ✓ Paid {balance > 0 ? `(+৳${formatCurrency(balance)})` : ""}
                           </span>
                         ) : (
                           <span className="inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-[10px] font-bold text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                            Due: ৳{Math.abs(balance)}
+                            Due: ৳{formatCurrency(Math.abs(balance))}
                           </span>
                         )}
                       </div>
                     </div>
                     
-                    <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-                      <span>Rent: ৳{required} | Rec: ৳{paid}</span>
+                    <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 pl-11">
+                      <span>Rent: ৳{formatCurrency(required)} | Rec: ৳{formatCurrency(paid)}</span>
                       {(profile?.role === "admin" || profile?.role === "moderator") && !rentData.isClosed && (
-                        showPaymentForm === user.id ? (
-                          <div className="flex items-center gap-1">
-                            <input 
-                              type="number" 
-                              value={paymentAmount}
-                              onChange={e => setPaymentAmount(e.target.value)}
-                              placeholder="৳"
-                              className="w-16 rounded-lg border-gray-200 px-2 py-1 text-[10px] dark:bg-gray-700 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-                            />
-                            <button onClick={() => handleAddPayment(user.id)} disabled={saving} className="text-green-600 hover:text-green-900 font-bold">Save</button>
-                            <button onClick={() => setShowPaymentForm(null)} className="text-gray-400 hover:text-gray-600">×</button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setShowPaymentForm(user.id); setPaymentAmount(""); }}
-                            className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 font-bold flex items-center gap-1 group/btn"
-                          >
-                            <PlusCircle className="h-3 w-3 group-hover/btn:scale-125 transition-transform" /> Pay
-                          </button>
-                        )
+                        <button
+                          onClick={() => { setShowPaymentModal(user.id); setPaymentAmount(""); setPaymentMethod("Cash"); setPaymentRef(""); }}
+                          className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 font-bold flex items-center gap-1 group/btn"
+                        >
+                          <PlusCircle className="h-3.5 w-3.5 group-hover/btn:scale-125 transition-transform" /> Pay Rent
+                        </button>
                       )}
                     </div>
                   </li>
@@ -401,6 +400,72 @@ export default function RentPage() {
           </motion.div>
         </div>
       </div>
+
+      {/* Add Rent Payment Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:hidden">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Pay House Rent / Utility
+            </h3>
+            <p className="text-sm text-gray-500 mb-4 font-medium">
+              Member: <span className="font-bold text-gray-900 dark:text-white">{permanentUsers.find(u => u.id === showPaymentModal)?.name}</span>
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount (৳)</label>
+                <input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(e.target.value)}
+                  placeholder="e.g. 2000"
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-green-500 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Method</label>
+                <select
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value)}
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-green-500 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="bKash">bKash</option>
+                  <option value="Nagad">Nagad</option>
+                  <option value="Rocket">Rocket</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reference ID / TxID (Optional)</label>
+                <input
+                  type="text"
+                  value={paymentRef}
+                  onChange={e => setPaymentRef(e.target.value)}
+                  placeholder="e.g. Transaction ID or sender number"
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-green-500 focus:ring-green-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowPaymentModal(null)}
+                  className="px-4 py-2 text-sm font-bold text-gray-500 hover:text-gray-900 dark:text-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleAddPayment(showPaymentModal)}
+                  disabled={saving || !paymentAmount}
+                  className="rounded-xl bg-green-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-green-100 hover:bg-green-700 disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save Payment"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.main>
   );
 }

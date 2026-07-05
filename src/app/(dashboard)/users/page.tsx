@@ -7,7 +7,8 @@ import { useAuth, UserProfile } from "@/context/AuthContext";
 import { Users, Shield, UserCheck, UserX, Trash2, UserPlus, Edit2 } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
 import toast from "react-hot-toast";
-import { sortUsers } from "@/lib/utils";
+import { sortUsers, formatCurrency } from "@/lib/utils";
+import Avatar from "@/components/layout/Avatar";
 
 import { motion } from "framer-motion";
 
@@ -31,6 +32,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Add Member State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -274,6 +276,16 @@ export default function UsersPage() {
         </motion.div>
       )}
 
+      <div className="flex items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/50">
+        <input 
+          type="text" 
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search members by name or email..."
+          className="w-full rounded-xl border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+        />
+      </div>
+
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black ring-opacity-5 dark:bg-gray-800 dark:ring-white/10">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -292,7 +304,10 @@ export default function UsersPage() {
               animate="show"
               className="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-800"
             >
-              {users.map((user) => (
+              {users.filter(user => 
+                user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                user.email.toLowerCase().includes(searchQuery.toLowerCase())
+              ).map((user) => (
                 <motion.tr variants={item} key={user.id} className={`${updating === user.id ? "opacity-30" : ""} hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors`}>
                   <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
                     {editingUser === user.id ? (
@@ -301,10 +316,13 @@ export default function UsersPage() {
                         <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="rounded-lg border-gray-200 px-3 py-1.5 text-xs dark:bg-gray-700" placeholder="Email" />
                       </div>
                     ) : (
-                      <>
-                        <div className="font-bold text-gray-900 dark:text-white">{user.name}</div>
-                        <div className="text-[10px] font-medium text-gray-400 mt-0.5">{user.email}</div>
-                      </>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={user.name} size={36} />
+                        <div>
+                          <div className="font-bold text-gray-900 dark:text-white">{user.name}</div>
+                          <div className="text-[10px] font-medium text-gray-400 mt-0.5">{user.email}</div>
+                        </div>
+                      </div>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm">
@@ -342,7 +360,7 @@ export default function UsersPage() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm font-black">
                     <span className={user.currentBalance >= 0 ? "text-green-600" : "text-red-600"}>
-                      ৳ {user.currentBalance}
+                      ৳ {formatCurrency(user.currentBalance)}
                     </span>
                   </td>
                   <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">

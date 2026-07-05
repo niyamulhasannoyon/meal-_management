@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import { Calculator, Home, Users, FileText, Activity, TrendingUp, ShoppingBag, Utensils, Scale, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, orderBy, limit } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, limit, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { format, startOfMonth, eachDayOfInterval, endOfMonth, isSameDay } from "date-fns";
 import { 
@@ -57,24 +57,36 @@ export default function Dashboard() {
     let mealsRaw: any[] = [];
     let bazarRaw: any[] = [];
     let finesData: Record<string, number> = {};
+    let isClosed = false;
+    let closedStats = { mealRate: 0, totalMeals: 0, totalBazar: 0 };
 
     const updateStats = () => {
-      const mealsMap: Record<string, number> = {};
-      mealsRaw.forEach(m => {
-        mealsMap[m.id] = m.totalMeals || 0;
-      });
+      let currentMealRate = 0;
+      let currentTotalMeals = 0;
+      let currentTotalBazar = 0;
 
-      const totalRegularMeals = Object.values(mealsMap).reduce((a, b) => (a as number) + (b as number), 0);
-      const totalFines = Object.values(finesData).reduce((a, b) => a + b, 0);
-      const tMeals = totalRegularMeals + totalFines;
-      
-      let tBazar = 0;
-      bazarRaw.forEach(b => tBazar += b.amount);
+      if (isClosed) {
+        currentMealRate = closedStats.mealRate;
+        currentTotalMeals = closedStats.totalMeals;
+        currentTotalBazar = closedStats.totalBazar;
+      } else {
+        const mealsMap: Record<string, number> = {};
+        mealsRaw.forEach(m => {
+          mealsMap[m.id] = m.totalMeals || 0;
+        });
+
+        const totalRegularMeals = Object.values(mealsMap).reduce((a, b) => (a as number) + (b as number), 0);
+        const totalFines = Object.values(finesData).reduce((a, b) => a + b, 0);
+        currentTotalMeals = totalRegularMeals + totalFines;
+        
+        bazarRaw.forEach(b => currentTotalBazar += b.amount);
+        currentMealRate = currentTotalMeals > 0 ? currentTotalBazar / currentTotalMeals : 0;
+      }
 
       setStats({
-        mealRate: tMeals > 0 ? tBazar / tMeals : 0,
-        totalMeals: tMeals,
-        totalBazar: tBazar
+        mealRate: currentMealRate,
+        totalMeals: currentTotalMeals,
+        totalBazar: currentTotalBazar
       });
 
       let cumulativeMeals = 0;
@@ -99,16 +111,37 @@ export default function Dashboard() {
         cumulativeMeals += dayTotalMeals;
         cumulativeBazar += dayBazar;
 
+        const dynamicRate = cumulativeMeals > 0 ? Number((cumulativeBazar / cumulativeMeals).toFixed(2)) : 0;
+
         return {
           name: format(day, "dd"),
           meals: dayTotalMeals,
-          rate: cumulativeMeals > 0 ? Number((cumulativeBazar / cumulativeMeals).toFixed(2)) : 0
+          rate: isClosed ? Number(currentMealRate.toFixed(2)) : dynamicRate
         };
       }).filter(d => parseInt(d.name) <= parseInt(format(new Date(), "dd")));
       
       setChartData(formattedChartData);
       setLoading(false);
     };
+
+    const unsubscribeLedger = onSnapshot(doc(db, "monthly_ledgers", currentMonth), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.isClosed) {
+          isClosed = true;
+          closedStats = {
+            mealRate: Number(data.mealRate) || 0,
+            totalMeals: Number(data.totalMeals) || 0,
+            totalBazar: Number(data.totalBazar) || 0
+          };
+        } else {
+          isClosed = false;
+        }
+      } else {
+        isClosed = false;
+      }
+      updateStats();
+    });
 
     const unsubscribeMeals = onSnapshot(collection(db, "meals"), (snapshot) => {
       const data: any[] = [];
@@ -161,6 +194,7 @@ export default function Dashboard() {
       unsubscribeBazar();
       unsubscribeFines();
       unsubscribeActivity();
+      unsubscribeLedger();
     };
   }, []);
 
@@ -255,7 +289,7 @@ export default function Dashboard() {
             </h3>
             <span className="text-xs text-gray-500">{format(new Date(), 'MMMM yyyy')}</span>
           </div>
-          <div className="h-[300px] w-full">
+          <div className="h-[300px] w-full relative overflow-visible">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData}>
                 <defs>
@@ -286,6 +320,7 @@ export default function Dashboard() {
                   tick={{fontSize: 12, fill: '#10b981'}}
                 />
                 <Tooltip 
+                  wrapperStyle={{ zIndex: 50 }}
                   contentStyle={{ 
                     borderRadius: '16px', 
                     border: 'none', 
@@ -409,10 +444,10 @@ export default function Dashboard() {
         {profile?.role === 'admin' && (
           <Link href="/activity" className="group block">
             <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-50 text-gray-600 dark:bg-gray-900/50 transition-colors group-hover:bg-gray-600 group-hover:text-white">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 transition-colors group-hover:bg-amber-600 group-hover:text-white">
                 <Activity className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-gray-600 transition-colors">Activity Logs</h3>
+              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-amber-600 transition-colors">Activity Logs</h3>
               <p className="mt-2 text-sm text-gray-500">View recent administrative actions and logs.</p>
             </motion.div>
           </Link>

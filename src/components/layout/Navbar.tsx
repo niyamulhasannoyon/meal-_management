@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Home, LogOut, ShieldCheck, User } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import Avatar from "./Avatar";
 
 export default function Navbar() {
   const { user, profile, signOut } = useAuth();
@@ -26,14 +27,17 @@ export default function Navbar() {
             </div>
           </Link>
           <div className="flex items-center gap-6">
-            <div className="hidden sm:flex flex-col items-end">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-gray-900 dark:text-white">{profile?.name || user.email}</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 uppercase tracking-tighter border border-indigo-100 dark:border-indigo-800">
-                  <ShieldCheck className="h-3 w-3" /> {profile?.role || "Member"}
-                </span>
+            <div className="hidden sm:flex items-center gap-3">
+              <Avatar name={profile?.name || user.email || "User"} size={36} />
+              <div className="flex flex-col items-end">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-gray-900 dark:text-white">{profile?.name || user.email}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 uppercase tracking-tighter border border-indigo-100 dark:border-indigo-800">
+                    <ShieldCheck className="h-3 w-3" /> {profile?.role || "Member"}
+                  </span>
+                </div>
+                <span className="text-[10px] text-gray-400 font-medium">Logged in successfully</span>
               </div>
-              <span className="text-[10px] text-gray-400 font-medium">Logged in successfully</span>
             </div>
             <motion.button
               whileHover={{ scale: 1.05 }}
