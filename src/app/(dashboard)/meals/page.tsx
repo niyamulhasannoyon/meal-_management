@@ -38,7 +38,7 @@ const item = {
 };
 
 export default function MealsPage() {
-  const { profile } = useAuth();
+  const { profile, settings } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [meals, setMeals] = useState<Record<string, MealEntry>>({});
@@ -54,18 +54,42 @@ export default function MealsPage() {
   const [systemStartDate, setSystemStartDate] = useState("");
 
   useEffect(() => {
+    if (settings) {
+      setSystemStartDate(settings.systemStartDate || "");
+    }
+  }, [settings]);
+
+  useEffect(() => {
     fetchUsersAndMeals();
   }, [selectedDate]);
 
+  // Set default bazar spender when users list or profile loads
   useEffect(() => {
-    // Automated submission trigger at 22:00 (10 PM)
+    if (users.length > 0) {
+      const isValidSpender = users.some(u => u.id === bazarSpenderId);
+      if (!isValidSpender) {
+        const isMember = users.some(u => u.id === profile?.id);
+        const defaultSpender = isMember ? (profile?.id || "") : "";
+        if (bazarSpenderId !== defaultSpender) {
+          setBazarSpenderId(defaultSpender);
+        }
+      }
+    }
+  }, [users, profile, bazarSpenderId]);
+
+  useEffect(() => {
+    // Automated submission trigger
     const checkAutoSubmit = () => {
+      const autoEnabled = settings?.autoSubmitEnabled !== undefined ? settings.autoSubmitEnabled : true;
+      const autoHour = settings?.autoSubmitHour !== undefined ? settings.autoSubmitHour : 22;
+      if (!autoEnabled) return;
+
       const now = new Date();
       const hours = now.getHours();
       const todayStr = format(new Date(), "yyyy-MM-dd");
       
-      if (hours >= 22 && selectedDate === todayStr && !isSubmittedForDate && !loading && Object.keys(meals).length > 0) {
-        console.log("Auto-submitting meals at 10 PM...");
+      if (hours >= autoHour && selectedDate === todayStr && !isSubmittedForDate && !loading && Object.keys(meals).length > 0) {
+        console.log(`Auto-submitting meals at ${autoHour}:00...`);
         handleSaveMeals();
       }
     };
@@ -74,16 +98,12 @@ export default function MealsPage() {
     checkAutoSubmit(); // Check immediately on mount
 
     return () => clearInterval(interval);
-  }, [selectedDate, isSubmittedForDate, loading, meals]);
+  }, [selectedDate, isSubmittedForDate, loading, meals, settings]);
 
   const fetchUsersAndMeals = async () => {
     setLoading(true);
     try {
-      // Fetch settings
-      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
-      if (settingsDoc.exists()) {
-        setSystemStartDate(settingsDoc.data().systemStartDate || "");
-      }
+      // Settings are loaded reactively from AuthContext
 
       const usersSnap = await getDocs(collection(db, "users"));
       const usersData: UserProfile[] = [];
@@ -108,16 +128,20 @@ export default function MealsPage() {
       });
       setIsSubmittedForDate(hasSubmitted);
 
+      const defBreakfast = settings?.defaultBreakfast !== undefined ? settings.defaultBreakfast : 0.5;
+      const defLunch = settings?.defaultLunch !== undefined ? settings.defaultLunch : 1.0;
+      const defDinner = settings?.defaultDinner !== undefined ? settings.defaultDinner : 1.0;
+
       // Populate default meals if not exist (will be overwritten by previous day's data if available)
       usersData.forEach(u => {
         if (!mealsData[u.id]) {
           mealsData[u.id] = {
             userId: u.id,
             date: selectedDate,
-            breakfast: 0.5,
-            lunch: 1,
-            dinner: 1,
-            totalMeals: 2.5
+            breakfast: defBreakfast,
+            lunch: defLunch,
+            dinner: defDinner,
+            totalMeals: defBreakfast + defLunch + defDinner
           };
         }
       });
@@ -143,10 +167,6 @@ export default function MealsPage() {
             };
           }
         });
-      }
-
-      if (usersData.length > 0 && !bazarSpenderId) {
-        setBazarSpenderId(profile?.id || usersData[0].id);
       }
 
       setMeals(mealsData);
@@ -215,7 +235,7 @@ export default function MealsPage() {
         profile?.id || "unknown",
         profile?.name || "Unknown User",
         "ADDED_BAZAR",
-        `Added bazar cost: ৳${bazarAmount} (Spender: ${spender?.name || "Unknown"})`
+        `Added bazar cost: ${settings?.currencySymbol || "৳"}${bazarAmount} (Spender: ${spender?.name || "Unknown"})`
       );
       
       setBazarAmount("");
@@ -312,12 +332,13 @@ export default function MealsPage() {
                     const meal = meals[user.id];
                     if (!meal) return null;
                     
+                    const allowMemberEditing = settings?.allowMemberEditing !== undefined ? settings.allowMemberEditing : true;
                     let isEditable = false;
                     if (systemStartDate && selectedDate < systemStartDate) {
                       isEditable = false;
                     } else if (profile?.role === "admin" || profile?.role === "moderator") {
                       isEditable = true;
-                    } else if (profile?.role === "member" && profile.id === user.id) {
+                    } else if (profile?.role === "member" && profile.id === user.id && allowMemberEditing) {
                       isEditable = true;
                     } else if (profile?.role === "visitor") {
                       isEditable = false;
@@ -372,7 +393,7 @@ export default function MealsPage() {
             </h2>
             <form onSubmit={handleAddBazar} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount (৳)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount ({settings?.currencySymbol || "৳"})</label>
                 <input 
                   type="number" 
                   required 

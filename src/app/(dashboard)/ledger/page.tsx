@@ -39,7 +39,8 @@ const item = {
 };
 
 export default function LedgerPage() {
-  const { profile } = useAuth();
+  const { profile, settings } = useAuth();
+  const currencySymbol = settings?.currencySymbol || "৳";
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), "yyyy-MM"));
   const [ledgerUsers, setLedgerUsers] = useState<LedgerUser[]>([]);
 
@@ -325,7 +326,7 @@ export default function LedgerPage() {
         profile?.id || "unknown",
         profile?.name || "Unknown User",
         "ADDED_MEAL_DEPOSIT",
-        `Added meal deposit of ৳${depositAmount} via ${depositMethod} for ${userToDeposit?.name || "Member"}`
+        `Added meal deposit of ${currencySymbol}${depositAmount} via ${depositMethod} for ${userToDeposit?.name || "Member"}`
       );
 
       toast.success("Deposit added successfully!");
@@ -485,7 +486,7 @@ export default function LedgerPage() {
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
       >
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
           <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Mess Meals</dt>
@@ -493,15 +494,11 @@ export default function LedgerPage() {
         </motion.div>
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
           <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Bazar Cost</dt>
-          <dd className="mt-1 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">৳ {formatCurrency(totalBazar)}</dd>
-        </motion.div>
-        <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
-          <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Deposits</dt>
-          <dd className="mt-1 text-3xl font-bold tracking-tight text-green-600 dark:text-green-400">৳ {formatCurrency(ledgerUsers.reduce((sum, u) => sum + u.deposits, 0))}</dd>
+          <dd className="mt-1 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{currencySymbol} {formatCurrency(totalBazar)}</dd>
         </motion.div>
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-indigo-600 px-4 py-5 shadow-lg shadow-indigo-200 dark:shadow-none sm:p-6">
           <dt className="truncate text-sm font-medium text-indigo-100">Final Meal Rate</dt>
-          <dd className="mt-1 text-3xl font-bold tracking-tight text-white">৳ {formatCurrency(mealRate)}</dd>
+          <dd className="mt-1 text-3xl font-bold tracking-tight text-white">{currencySymbol} {formatCurrency(mealRate)}</dd>
         </motion.div>
       </motion.div>
 
@@ -527,10 +524,10 @@ export default function LedgerPage() {
               <tr>
                 <th className="py-4 pl-4 pr-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider sm:pl-6 dark:text-white">Member</th>
                 <th className="px-3 py-4 text-center text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Total Meals</th>
-                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Meal Cost (৳)</th>
-                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Deposits (৳)</th>
-                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white font-bold text-red-600">Due (৳)</th>
-                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider font-bold text-green-600">Extra (৳)</th>
+                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Meal Cost ({currencySymbol})</th>
+                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Deposits ({currencySymbol})</th>
+                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white font-bold text-red-600">Due ({currencySymbol})</th>
+                <th className="px-3 py-4 text-right text-sm font-bold text-gray-900 uppercase tracking-wider font-bold text-green-600">Extra ({currencySymbol})</th>
                 <th className="relative py-4 pl-3 pr-4 sm:pr-6 print:hidden"></th>
               </tr>
             </thead>
@@ -633,7 +630,7 @@ export default function LedgerPage() {
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount (৳)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   value={depositAmount}
@@ -724,7 +721,7 @@ export default function LedgerPage() {
                           {member?.name || "Deleted User"}
                         </td>
                         <td className="px-4 py-3 text-right font-black text-green-600">
-                          ৳ {formatCurrency(pay.amount)}
+                          {currencySymbol} {formatCurrency(pay.amount)}
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">
                           {pay.paymentMethod || "Direct Deposit"}

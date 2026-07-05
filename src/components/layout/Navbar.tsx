@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import Avatar from "./Avatar";
 
 export default function Navbar() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, settings, signOut } = useAuth();
 
   if (!user) return null;
 
@@ -21,7 +21,7 @@ export default function Navbar() {
             </div>
             <div className="flex flex-col">
               <h1 className="text-lg font-black text-gray-900 dark:text-white leading-tight">
-                Meal Manager
+                {settings?.messName || "Meal Manager"}
               </h1>
               <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Premium Dashboard</span>
             </div>

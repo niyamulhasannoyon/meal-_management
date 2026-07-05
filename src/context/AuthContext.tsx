@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 export interface UserProfile {
@@ -14,9 +14,22 @@ export interface UserProfile {
   currentBalance: number;
 }
 
+export interface SystemSettings {
+  systemStartDate: string;
+  messName: string;
+  currencySymbol: string;
+  defaultBreakfast: number;
+  defaultLunch: number;
+  defaultDinner: number;
+  allowMemberEditing: boolean;
+  autoSubmitEnabled: boolean;
+  autoSubmitHour: number;
+}
+
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
+  settings: SystemSettings | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -24,6 +37,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
+  settings: null,
   loading: true,
   signOut: async () => {},
 });
@@ -31,7 +45,41 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubSettings = onSnapshot(doc(db, "system_config", "settings"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSettings({
+          systemStartDate: data.systemStartDate || "",
+          messName: data.messName || "Meal Manager",
+          currencySymbol: data.currencySymbol || "৳",
+          defaultBreakfast: data.defaultBreakfast !== undefined ? Number(data.defaultBreakfast) : 0.5,
+          defaultLunch: data.defaultLunch !== undefined ? Number(data.defaultLunch) : 1.0,
+          defaultDinner: data.defaultDinner !== undefined ? Number(data.defaultDinner) : 1.0,
+          allowMemberEditing: data.allowMemberEditing !== undefined ? Boolean(data.allowMemberEditing) : true,
+          autoSubmitEnabled: data.autoSubmitEnabled !== undefined ? Boolean(data.autoSubmitEnabled) : true,
+          autoSubmitHour: data.autoSubmitHour !== undefined ? Number(data.autoSubmitHour) : 22,
+        });
+      } else {
+        setSettings({
+          systemStartDate: "",
+          messName: "Meal Manager",
+          currencySymbol: "৳",
+          defaultBreakfast: 0.5,
+          defaultLunch: 1.0,
+          defaultDinner: 1.0,
+          allowMemberEditing: true,
+          autoSubmitEnabled: true,
+          autoSubmitHour: 22,
+        });
+      }
+    });
+
+    return () => unsubSettings();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -83,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut }}>
+    <AuthContext.Provider value={{ user, profile, settings, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

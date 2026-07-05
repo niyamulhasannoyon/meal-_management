@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getRole() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? getUserData().role
+        : 'visitor';
+    }
+
+    function isAdmin() {
+      return getRole() == 'admin';
+    }
+
+    function isModerator() {
+      return getRole() == 'moderator';
+    }
+
+    function isMember() {
+      return getRole() == 'member';
+    }
+
+    function isManager() {
+      return isAdmin() || isModerator();
+    }
+
+    function isAuthorizedUser() {
+      return isAdmin() || isModerator() || isMember();
+    }
+
+    function getSettings() {
+      return get(/databases/$(database)/documents/system_config/settings).data;
+    }
+
+    function allowMemberMealEditing() {
+      return getSettings().allowMemberEditing == true;
+    }
+
+    // 1. Users collection rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() 
+        && request.auth.uid == userId
+        && request.resource.data.role == 'visitor'
+        && request.resource.data.currentBalance == 0
+        && request.resource.data.isPermanent == false;
+
+      allow update: if isAuthenticated() && (
+        // Admins can update anything
+        isAdmin()
+        // Moderators can toggle isPermanent status
+        || (isModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanent']))
+        // Users can update their own name/email (but not role or balance)
+        || (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email']))
+      );
+
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // 2. Meals collection rules
+    match /meals/{mealId} {
+      allow read: if isAuthenticated();
+      
+      allow write: if isAuthenticated() && (
+        isManager()
+        || (isMember() && request.resource.data.userId == request.auth.uid && allowMemberMealEditing())
+      );
+    }
+
+    // 3. Bazar Costs rules
+    match /bazar_costs/{bazarId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAuthorizedUser();
+    }
+
+    // 4. Payments rules
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+
+    // 5. Fines rules
+    match /fines/{fineId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isManager();
+    }
+
+    // 6. Rent config rules
+    match /monthly_rent/{rentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+
+    // 7. Monthly Ledgers rules
+    match /monthly_ledgers/{ledgerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+
+    // 8. System Config / Settings rules
+    match /system_config/settings {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAdmin();
+    }
+
+    // 9. Activity Logs rules
+    match /activity_logs/{logId} {
+      allow read: if isAuthenticated() && isAdmin();
+      allow create: if isAuthenticated();
+    }
+  }
+}

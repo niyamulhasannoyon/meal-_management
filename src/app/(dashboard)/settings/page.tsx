@@ -7,35 +7,51 @@ import { useAuth } from "@/context/AuthContext";
 import { logActivity } from "@/lib/activityLogger";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
-import { Settings, Calendar, Trash2, AlertTriangle, ShieldAlert } from "lucide-react";
-import { useRouter } from "next/navigation"; // Use standard next navigation
+import { 
+  Settings, 
+  Calendar, 
+  Trash2, 
+  AlertTriangle, 
+  ShieldAlert, 
+  Building, 
+  DollarSign, 
+  UtensilsCrossed, 
+  Lock, 
+  Clock 
+} from "lucide-react";
 
 export default function SettingsPage() {
-  const { profile } = useAuth();
+  const { profile, settings } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [systemStartDate, setSystemStartDate] = useState("");
   const [confirmResetText, setConfirmResetText] = useState("");
   const [resetting, setResetting] = useState(false);
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
+  // Form states
+  const [systemStartDate, setSystemStartDate] = useState("");
+  const [messName, setMessName] = useState("Meal Manager");
+  const [currencySymbol, setCurrencySymbol] = useState("৳");
+  const [defaultBreakfast, setDefaultBreakfast] = useState(0.5);
+  const [defaultLunch, setDefaultLunch] = useState(1.0);
+  const [defaultDinner, setDefaultDinner] = useState(1.0);
+  const [allowMemberEditing, setAllowMemberEditing] = useState(true);
+  const [autoSubmitEnabled, setAutoSubmitEnabled] = useState(true);
+  const [autoSubmitHour, setAutoSubmitHour] = useState(22);
 
-  const fetchSettings = async () => {
-    setLoading(true);
-    try {
-      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
-      if (settingsDoc.exists()) {
-        setSystemStartDate(settingsDoc.data().systemStartDate || "");
-      }
-    } catch (error) {
-      console.error("Error fetching settings:", error);
-      toast.error("Failed to load settings.");
-    } finally {
+  useEffect(() => {
+    if (settings) {
+      setSystemStartDate(settings.systemStartDate || "");
+      setMessName(settings.messName || "Meal Manager");
+      setCurrencySymbol(settings.currencySymbol || "৳");
+      setDefaultBreakfast(settings.defaultBreakfast !== undefined ? settings.defaultBreakfast : 0.5);
+      setDefaultLunch(settings.defaultLunch !== undefined ? settings.defaultLunch : 1.0);
+      setDefaultDinner(settings.defaultDinner !== undefined ? settings.defaultDinner : 1.0);
+      setAllowMemberEditing(settings.allowMemberEditing !== undefined ? settings.allowMemberEditing : true);
+      setAutoSubmitEnabled(settings.autoSubmitEnabled !== undefined ? settings.autoSubmitEnabled : true);
+      setAutoSubmitHour(settings.autoSubmitHour !== undefined ? settings.autoSubmitHour : 22);
       setLoading(false);
     }
-  };
+  }, [settings]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,14 +62,22 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await setDoc(doc(db, "system_config", "settings"), {
-        systemStartDate
+        systemStartDate,
+        messName,
+        currencySymbol,
+        defaultBreakfast: Number(defaultBreakfast),
+        defaultLunch: Number(defaultLunch),
+        defaultDinner: Number(defaultDinner),
+        allowMemberEditing,
+        autoSubmitEnabled,
+        autoSubmitHour: Number(autoSubmitHour)
       }, { merge: true });
 
       await logActivity(
         profile?.id || "unknown",
         profile?.name || "Unknown User",
         "UPDATE_SETTINGS",
-        `Updated system start date to ${systemStartDate || "None (disabled)"}`
+        `Updated settings: Name: "${messName}", Start: ${systemStartDate || "None"}, Currency: "${currencySymbol}"`
       );
 
       toast.success("Settings updated successfully!");
@@ -128,11 +152,18 @@ export default function SettingsPage() {
         });
       }
 
-      // 8. Reset start date setting
+      // 8. Reset settings doc back to defaults
       await setDoc(doc(db, "system_config", "settings"), {
-        systemStartDate: ""
-      }, { merge: true });
-      setSystemStartDate("");
+        systemStartDate: "",
+        messName: "Meal Manager",
+        currencySymbol: "৳",
+        defaultBreakfast: 0.5,
+        defaultLunch: 1.0,
+        defaultDinner: 1.0,
+        allowMemberEditing: true,
+        autoSubmitEnabled: true,
+        autoSubmitHour: 22
+      });
 
       await logActivity(
         profile?.id || "unknown",
@@ -177,7 +208,7 @@ export default function SettingsPage() {
             System Settings
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 font-medium">
-            Configure calendar start constraints and perform clean slate resets.
+            Customize mess features, default meals, currency, start constraints, and database resets.
           </p>
         </div>
       </div>
@@ -187,8 +218,8 @@ export default function SettingsPage() {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Card 1: Start Date Configuration */}
+        <form onSubmit={handleSaveSettings} className="space-y-6">
+          {/* Card 1: General Settings */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -196,22 +227,141 @@ export default function SettingsPage() {
           >
             <div className="flex items-start gap-4 mb-6">
               <div className="rounded-xl bg-indigo-50 p-3 dark:bg-indigo-950/30">
-                <Calendar className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                <Building className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                  System Start Date
+                  General Mess Info
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Specify a date from which all calculations should begin. Any meals, bazars, payments, or fines recorded before this date will be fully ignored.
+                  Customize the brand identity and pricing standard of your mess.
                 </p>
               </div>
             </div>
 
-            <form onSubmit={handleSaveSettings} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
-                  Meal Start Date
+                  Mess Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={messName}
+                  onChange={e => setMessName(e.target.value)}
+                  className="w-full rounded-xl border-gray-200 py-3 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                  placeholder="e.g. My Awesome Mess"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                  Currency Symbol
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={currencySymbol}
+                  onChange={e => setCurrencySymbol(e.target.value)}
+                  className="w-full rounded-xl border-gray-200 py-3 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                  placeholder="e.g. ৳, $, ₹"
+                />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 2: Default Meal Values */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+          >
+            <div className="flex items-start gap-4 mb-6">
+              <div className="rounded-xl bg-indigo-50 p-3 dark:bg-indigo-950/30">
+                <UtensilsCrossed className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Default Meal Configs
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Define default daily meal weights assigned automatically to all members each day.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                  Default Breakfast
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="5"
+                  required
+                  value={defaultBreakfast}
+                  onChange={e => setDefaultBreakfast(Number(e.target.value))}
+                  className="w-full rounded-xl border-gray-200 py-3 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                  Default Lunch
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="5"
+                  required
+                  value={defaultLunch}
+                  onChange={e => setDefaultLunch(Number(e.target.value))}
+                  className="w-full rounded-xl border-gray-200 py-3 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                  Default Dinner
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="5"
+                  required
+                  value={defaultDinner}
+                  onChange={e => setDefaultDinner(Number(e.target.value))}
+                  className="w-full rounded-xl border-gray-200 py-3 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 3: Policies & Automation */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+          >
+            <div className="flex items-start gap-4 mb-6">
+              <div className="rounded-xl bg-indigo-50 p-3 dark:bg-indigo-950/30">
+                <Lock className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  System Constraints & Policies
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Manage date bounds, member permissions, and automated routines.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                  System Calculations Start Date
                 </label>
                 <input
                   type="date"
@@ -220,69 +370,132 @@ export default function SettingsPage() {
                   className="max-w-md w-full rounded-xl border-gray-200 py-3 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                 />
                 <span className="block mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  Leave empty to calculate from the very beginning of time.
+                  Leave empty to calculate from the very beginning of database entries.
                 </span>
               </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-100 dark:shadow-none hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? "Saving..." : "Save Settings"}
-                </button>
+              <div className="border-t border-gray-100 pt-4 dark:border-gray-800/80">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-bold text-gray-900 dark:text-white">
+                      Allow Members to Edit Meals
+                    </label>
+                    <span className="block text-xs text-gray-400 dark:text-gray-500">
+                      When enabled, regular members can edit their daily meals. When disabled, only admins/moderators can edit logs.
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={allowMemberEditing}
+                    onChange={e => setAllowMemberEditing(e.target.checked)}
+                    className="h-5 w-5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:bg-gray-800 dark:border-gray-700"
+                  />
+                </div>
               </div>
-            </form>
+
+              <div className="border-t border-gray-100 pt-4 dark:border-gray-800/80">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-bold text-gray-900 dark:text-white">
+                      Automated 10 PM Lock & Submit
+                    </label>
+                    <span className="block text-xs text-gray-400 dark:text-gray-500">
+                      Auto-saves default meal logs daily when no entries are manually logged.
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={autoSubmitEnabled}
+                    onChange={e => setAutoSubmitEnabled(e.target.checked)}
+                    className="h-5 w-5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:bg-gray-800 dark:border-gray-700"
+                  />
+                </div>
+              </div>
+
+              {autoSubmitEnabled && (
+                <div className="border-t border-gray-100 pt-4 dark:border-gray-800/80 flex items-center gap-4">
+                  <Clock className="h-5 w-5 text-gray-400" />
+                  <div className="flex-1">
+                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">
+                      Auto-Submit Hour (24h format)
+                    </label>
+                    <select
+                      value={autoSubmitHour}
+                      onChange={e => setAutoSubmitHour(Number(e.target.value))}
+                      className="max-w-xs w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                    >
+                      {Array.from({ length: 24 }).map((_, h) => (
+                        <option key={h} value={h}>
+                          {h.toString().padStart(2, "0")}:00 ({h >= 12 ? `${h === 12 ? 12 : h - 12} PM` : `${h === 0 ? 12 : h} AM`})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
           </motion.div>
 
-          {/* Card 2: Reset System (Danger Zone) */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="rounded-2xl border border-red-100 bg-red-50/10 p-6 dark:border-red-900/30 dark:bg-red-950/5"
-          >
-            <div className="flex items-start gap-4 mb-6">
-              <div className="rounded-xl bg-red-100 p-3 dark:bg-red-950/30">
-                <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-red-900 dark:text-red-400">
-                  Danger Zone: Reset Database
-                </h3>
-                <p className="text-sm text-red-600/80 dark:text-red-400/80 mt-1">
-                  This will permanently delete all records of daily meals, bazar costs, rent configurations, deposit payments, fines, and closed ledger snapshots. All user balances will be reset back to 0. This cannot be undone.
-                </p>
-              </div>
+          {/* Action Buttons */}
+          <div className="flex justify-end pt-4">
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-100 dark:shadow-none hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {saving ? "Saving Configurations..." : "Save System Configs"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Card 4: Reset System (Danger Zone) */}
+      {!loading && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-8 rounded-2xl border border-red-100 bg-red-50/10 p-6 dark:border-red-900/30 dark:bg-red-950/5"
+        >
+          <div className="flex items-start gap-4 mb-6">
+            <div className="rounded-xl bg-red-100 p-3 dark:bg-red-950/30">
+              <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-red-900 dark:text-red-400">
+                Danger Zone: Reset Database
+              </h3>
+              <p className="text-sm text-red-600/80 dark:text-red-400/80 mt-1">
+                This will permanently delete all records of daily meals, bazar costs, rent configurations, deposit payments, fines, and closed ledger snapshots. All user balances will be reset back to 0. This cannot be undone.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-bold text-red-900 dark:text-red-400 mb-2">
+                Please type <span className="font-extrabold underline">RESET</span> to confirm:
+              </label>
+              <input
+                type="text"
+                value={confirmResetText}
+                onChange={e => setConfirmResetText(e.target.value)}
+                placeholder="Type RESET"
+                className="max-w-md w-full rounded-xl border-red-200 py-3 px-4 text-sm focus:border-red-500 focus:ring-red-500 dark:bg-gray-800 dark:border-red-700 dark:text-white"
+              />
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-red-900 dark:text-red-400 mb-2">
-                  Please type <span className="font-extrabold underline">RESET</span> to confirm:
-                </label>
-                <input
-                  type="text"
-                  value={confirmResetText}
-                  onChange={e => setConfirmResetText(e.target.value)}
-                  placeholder="Type RESET"
-                  className="max-w-md w-full rounded-xl border-red-200 py-3 px-4 text-sm focus:border-red-500 focus:ring-red-500 dark:bg-gray-800 dark:border-red-700 dark:text-white"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  onClick={handleResetSystem}
-                  disabled={resetting || confirmResetText !== "RESET"}
-                  className="rounded-xl bg-red-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-100 dark:shadow-none hover:bg-red-750 disabled:opacity-30 transition-colors flex items-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {resetting ? "Resetting Database..." : "Reset System Database"}
-                </button>
-              </div>
+            <div className="pt-2">
+              <button
+                onClick={handleResetSystem}
+                disabled={resetting || confirmResetText !== "RESET"}
+                className="rounded-xl bg-red-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-100 dark:shadow-none hover:bg-red-750 disabled:opacity-30 transition-colors flex items-center gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                {resetting ? "Resetting Database..." : "Reset System Database"}
+              </button>
             </div>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
       )}
     </motion.main>
   );
