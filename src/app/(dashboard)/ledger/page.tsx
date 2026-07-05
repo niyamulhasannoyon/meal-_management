@@ -71,13 +71,19 @@ export default function LedgerPage() {
 
   const fetchPaymentsList = async () => {
     try {
+      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
+      const systemStartDate = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
+
       const paySnap = await getDocs(collection(db, "payments"));
       const list: any[] = [];
       paySnap.forEach(d => {
         const data = d.data();
         const dateObj = data.date?.toDate ? data.date.toDate() : (data.date ? new Date(data.date) : null);
-        if (dateObj && format(dateObj, "yyyy-MM") === currentMonth) {
-          list.push({ id: d.id, ...data, date: dateObj });
+        if (dateObj) {
+          const dateStr = format(dateObj, "yyyy-MM-dd");
+          if (format(dateObj, "yyyy-MM") === currentMonth && (!systemStartDate || dateStr >= systemStartDate)) {
+            list.push({ id: d.id, ...data, date: dateObj });
+          }
         }
       });
       list.sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -141,12 +147,16 @@ export default function LedgerPage() {
       // 2. Real-time Calculation if not closed
       setIsClosed(false);
 
+      // Fetch system start date
+      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
+      const systemStartDate = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
+
       // Fetch all users
       const usersSnap = await getDocs(collection(db, "users"));
       const allUsers: UserProfile[] = [];
       usersSnap.forEach((d) => {
         const data = d.data();
-        if (data.role !== "visitor") {
+        if (data.role === "member") {
           allUsers.push({ id: d.id, ...data } as UserProfile);
         }
       });
@@ -158,7 +168,8 @@ export default function LedgerPage() {
       const userMealDeposits: Record<string, number> = {};
       mealsSnap.forEach(d => {
         const data = d.data();
-        if (data.date && data.date.startsWith(currentMonth)) {
+        const dateStr = data.date || "";
+        if (dateStr && dateStr.startsWith(currentMonth) && (!systemStartDate || dateStr >= systemStartDate)) {
           const meals = Number(data.totalMeals || 0);
           tMeals += meals;
           userMealsCount[data.userId] = (userMealsCount[data.userId] || 0) + meals;
@@ -173,7 +184,8 @@ export default function LedgerPage() {
       bazarSnap.forEach(d => {
         const data = d.data();
         const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
-        if (format(dateObj, "yyyy-MM") === currentMonth) {
+        const dateStr = format(dateObj, "yyyy-MM-dd");
+        if (format(dateObj, "yyyy-MM") === currentMonth && (!systemStartDate || dateStr >= systemStartDate)) {
           tBazar += Number(data.amount || 0);
           if (data.spenderId) {
             bazarDeposits[data.spenderId] = (bazarDeposits[data.spenderId] || 0) + Number(data.amount || 0);
@@ -187,7 +199,8 @@ export default function LedgerPage() {
       paySnap.forEach(d => {
         const data = d.data();
         const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
-        if (format(dateObj, "yyyy-MM") === currentMonth && data.paymentFor === "meal") {
+        const dateStr = format(dateObj, "yyyy-MM-dd");
+        if (format(dateObj, "yyyy-MM") === currentMonth && data.paymentFor === "meal" && (!systemStartDate || dateStr >= systemStartDate)) {
           userDeposits[data.userId] = (userDeposits[data.userId] || 0) + Number(data.amount || 0);
         }
       });
@@ -197,8 +210,9 @@ export default function LedgerPage() {
       const userFinesCount: Record<string, number> = {};
       finesSnap.forEach(d => {
         const data = d.data();
-        const dateObj = data.date ? new Date(data.date) : new Date();
-        if (format(dateObj, "yyyy-MM") === currentMonth) {
+        const dateObj = data.date?.toDate ? data.date.toDate() : (data.date ? new Date(data.date) : new Date());
+        const dateStr = format(dateObj, "yyyy-MM-dd");
+        if (format(dateObj, "yyyy-MM") === currentMonth && (!systemStartDate || dateStr >= systemStartDate)) {
           const fineAmount = Number(data.amount || 0);
           userFinesCount[data.userId] = (userFinesCount[data.userId] || 0) + fineAmount;
           tMeals += fineAmount; // Add fines to total mess meals for accurate meal rate

@@ -79,11 +79,14 @@ export default function RentPage() {
   const fetchRentAndUsers = async () => {
     setLoading(true);
     try {
-      // Fetch permanent users
-      const usersQuery = query(collection(db, "users"), where("isPermanent", "==", true));
-      const usersSnap = await getDocs(usersQuery);
+      const usersSnap = await getDocs(collection(db, "users"));
       const pUsers: UserProfile[] = [];
-      usersSnap.forEach((doc) => pUsers.push({ id: doc.id, ...doc.data() } as UserProfile));
+      usersSnap.forEach((doc) => {
+        const data = doc.data();
+        if (data.isPermanent === true && data.role === "member") {
+          pUsers.push({ id: doc.id, ...data } as UserProfile);
+        }
+      });
       setPermanentUsers(sortUsers(pUsers));
 
       // Fetch rent for current month
@@ -94,13 +97,18 @@ export default function RentPage() {
         // If no rent data exists for this month, start with default
         setRentData({ ...defaultRent });
       }
+      // Fetch system start date
+      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
+      const systemStartDate = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
+
       // Fetch rent payments for current month
       const paySnap = await getDocs(collection(db, "payments"));
       const deposits: Record<string, number> = {};
       paySnap.forEach(d => {
         const data = d.data();
         const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
-        if (format(dateObj, "yyyy-MM") === currentMonth && data.paymentFor === "rent") {
+        const dateStr = format(dateObj, "yyyy-MM-dd");
+        if (format(dateObj, "yyyy-MM") === currentMonth && data.paymentFor === "rent" && (!systemStartDate || dateStr >= systemStartDate)) {
           deposits[data.userId] = (deposits[data.userId] || 0) + Number(data.amount || 0);
         }
       });

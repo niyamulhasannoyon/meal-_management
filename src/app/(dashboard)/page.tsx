@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
-import { Calculator, Home, Users, FileText, Activity, TrendingUp, ShoppingBag, Utensils, Scale, Clock } from "lucide-react";
+import { Calculator, Home, Users, FileText, Activity, TrendingUp, ShoppingBag, Utensils, Scale, Clock, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, orderBy, limit, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -56,9 +56,11 @@ export default function Dashboard() {
     
     let mealsRaw: any[] = [];
     let bazarRaw: any[] = [];
-    let finesData: Record<string, number> = {};
+    let finesRaw: any[] = [];
     let isClosed = false;
     let closedStats = { mealRate: 0, totalMeals: 0, totalBazar: 0 };
+    let membersList: string[] = [];
+    let systemStartDate = "";
 
     const updateStats = () => {
       let currentMealRate = 0;
@@ -72,14 +74,28 @@ export default function Dashboard() {
       } else {
         const mealsMap: Record<string, number> = {};
         mealsRaw.forEach(m => {
-          mealsMap[m.id] = m.totalMeals || 0;
+          if (membersList.includes(m.userId) && (!systemStartDate || m.date >= systemStartDate)) {
+            mealsMap[m.id] = m.totalMeals || 0;
+          }
         });
 
         const totalRegularMeals = Object.values(mealsMap).reduce((a, b) => (a as number) + (b as number), 0);
-        const totalFines = Object.values(finesData).reduce((a, b) => a + b, 0);
+        
+        let totalFines = 0;
+        finesRaw.forEach(f => {
+          if (membersList.includes(f.userId) && (!systemStartDate || f.date >= systemStartDate)) {
+            totalFines += f.amount;
+          }
+        });
+        
         currentTotalMeals = totalRegularMeals + totalFines;
         
-        bazarRaw.forEach(b => currentTotalBazar += b.amount);
+        bazarRaw.forEach(b => {
+          if (!systemStartDate || b.date >= systemStartDate) {
+            currentTotalBazar += b.amount;
+          }
+        });
+        
         currentMealRate = currentTotalMeals > 0 ? currentTotalBazar / currentTotalMeals : 0;
       }
 
@@ -96,14 +112,14 @@ export default function Dashboard() {
         const dateStr = format(day, "yyyy-MM-dd");
         let dayTotalMeals = 0;
         mealsRaw.forEach(m => {
-          if (m.date === dateStr) {
+          if (m.date === dateStr && membersList.includes(m.userId) && (!systemStartDate || m.date >= systemStartDate)) {
             dayTotalMeals += m.totalMeals || 0;
           }
         });
 
         let dayBazar = 0;
         bazarRaw.forEach(b => {
-          if (b.date === dateStr) {
+          if (b.date === dateStr && (!systemStartDate || b.date >= systemStartDate)) {
             dayBazar += b.amount || 0;
           }
         });
@@ -123,6 +139,27 @@ export default function Dashboard() {
       setChartData(formattedChartData);
       setLoading(false);
     };
+
+    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+      const activeMembers: string[] = [];
+      snapshot.forEach(docSnap => {
+        const uData = docSnap.data();
+        if (uData.role === "member") {
+          activeMembers.push(docSnap.id);
+        }
+      });
+      membersList = activeMembers;
+      updateStats();
+    });
+
+    const unsubscribeSettings = onSnapshot(doc(db, "system_config", "settings"), (docSnap) => {
+      if (docSnap.exists()) {
+        systemStartDate = docSnap.data().systemStartDate || "";
+      } else {
+        systemStartDate = "";
+      }
+      updateStats();
+    });
 
     const unsubscribeLedger = onSnapshot(doc(db, "monthly_ledgers", currentMonth), (docSnap) => {
       if (docSnap.exists()) {
@@ -171,15 +208,16 @@ export default function Dashboard() {
     });
 
     const unsubscribeFines = onSnapshot(collection(db, "fines"), (snapshot) => {
-      const newFines: Record<string, number> = {};
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const dateObj = data.date?.toDate ? data.date.toDate() : (data.date ? new Date(data.date) : new Date());
+      const data: any[] = [];
+      snapshot.forEach(docSnap => {
+        const bData = docSnap.data();
+        const dateObj = bData.date?.toDate ? bData.date.toDate() : (bData.date ? new Date(bData.date) : new Date());
+        const dateStr = format(dateObj, "yyyy-MM-dd");
         if (format(dateObj, "yyyy-MM") === currentMonth) {
-          newFines[doc.id] = Number(data.amount) || 0;
+          data.push({ id: docSnap.id, amount: Number(bData.amount) || 0, date: dateStr, userId: bData.userId });
         }
       });
-      finesData = newFines;
+      finesRaw = data;
       updateStats();
     });
 
@@ -195,6 +233,8 @@ export default function Dashboard() {
       unsubscribeFines();
       unsubscribeActivity();
       unsubscribeLedger();
+      unsubscribeUsers();
+      unsubscribeSettings();
     };
   }, []);
 
@@ -462,6 +502,18 @@ export default function Dashboard() {
             <p className="mt-2 text-sm text-gray-500">View house rules and manage member fines/penalties.</p>
           </motion.div>
         </Link>
+
+        {profile?.role === 'admin' && (
+          <Link href="/settings" className="group block">
+            <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-slate-600 dark:bg-slate-900/20 transition-colors group-hover:bg-slate-600 group-hover:text-white">
+                <Settings className="h-6 w-6" />
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-slate-600 transition-colors">Settings</h3>
+              <p className="mt-2 text-sm text-gray-500">Configure system parameters and start dates.</p>
+            </motion.div>
+          </Link>
+        )}
       </motion.div>
     </motion.main>
   );

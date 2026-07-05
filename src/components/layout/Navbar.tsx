@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { Home, LogOut, ShieldCheck, User } from "lucide-react";
+import { Home, LogOut, ShieldCheck, User, Settings } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Avatar from "./Avatar";
@@ -39,6 +39,11 @@ export default function Navbar() {
                 <span className="text-[10px] text-gray-400 font-medium">Logged in successfully</span>
               </div>
             </div>
+            {profile?.role === "admin" && (
+              <Link href="/settings" className="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-all">
+                <Settings className="h-5 w-5" />
+              </Link>
+            )}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, doc, setDoc, query, where, addDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, query, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format, subDays } from "date-fns";
@@ -51,6 +51,7 @@ export default function MealsPage() {
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [systemStartDate, setSystemStartDate] = useState("");
 
   useEffect(() => {
     fetchUsersAndMeals();
@@ -78,12 +79,17 @@ export default function MealsPage() {
   const fetchUsersAndMeals = async () => {
     setLoading(true);
     try {
-      // Fetch all users
+      // Fetch settings
+      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
+      if (settingsDoc.exists()) {
+        setSystemStartDate(settingsDoc.data().systemStartDate || "");
+      }
+
       const usersSnap = await getDocs(collection(db, "users"));
       const usersData: UserProfile[] = [];
       usersSnap.forEach((doc) => {
         const data = doc.data();
-        if (data.role !== "visitor") {
+        if (data.role === "member") {
           usersData.push({ id: doc.id, ...data } as UserProfile);
         }
       });
@@ -240,6 +246,12 @@ export default function MealsPage() {
       animate={{ opacity: 1, y: 0 }}
       className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8"
     >
+      {systemStartDate && selectedDate < systemStartDate && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 text-amber-800 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-400 text-sm font-semibold flex items-center gap-2">
+          ⚠️ Meal logging and bazar entries are disabled because the selected date is before the System Start Date ({systemStartDate}).
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 sticky top-[73px] z-20 backdrop-blur-md bg-white/90">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -301,7 +313,9 @@ export default function MealsPage() {
                     if (!meal) return null;
                     
                     let isEditable = false;
-                    if (profile?.role === "admin" || profile?.role === "moderator") {
+                    if (systemStartDate && selectedDate < systemStartDate) {
+                      isEditable = false;
+                    } else if (profile?.role === "admin" || profile?.role === "moderator") {
                       isEditable = true;
                     } else if (profile?.role === "member" && profile.id === user.id) {
                       isEditable = true;
@@ -329,8 +343,8 @@ export default function MealsPage() {
                   })}
                 </motion.tbody>
               </table>
-            </div>
-            {(profile?.role === "admin" || profile?.role === "moderator" || profile?.role === "member") && (
+             </div>
+            {(profile?.role === "admin" || profile?.role === "moderator" || profile?.role === "member") && !(systemStartDate && selectedDate < systemStartDate) && (
               <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex justify-end border-t border-gray-100 dark:border-gray-700">
                 <button 
                   onClick={handleSaveMeals} 
@@ -366,6 +380,7 @@ export default function MealsPage() {
                   onChange={e => setBazarAmount(e.target.value)}
                   className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white transition-all"
                   placeholder="e.g. 500"
+                  disabled={systemStartDate !== "" && selectedDate < systemStartDate}
                 />
               </div>
               <div>
@@ -374,8 +389,9 @@ export default function MealsPage() {
                   type="text" 
                   value={bazarDesc}
                   onChange={e => setBazarDesc(e.target.value)}
-                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white transition-all"
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white transition-all disabled:opacity-50"
                   placeholder="e.g. Vegetables and Fish"
+                  disabled={systemStartDate !== "" && selectedDate < systemStartDate}
                 />
               </div>
               <div>
@@ -383,8 +399,9 @@ export default function MealsPage() {
                 <select 
                   value={bazarSpenderId}
                   onChange={e => setBazarSpenderId(e.target.value)}
-                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white transition-all"
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white transition-all disabled:opacity-50"
                   required
+                  disabled={systemStartDate !== "" && selectedDate < systemStartDate}
                 >
                   <option value="" disabled>Select Member</option>
                   {users.map(u => (
@@ -394,7 +411,7 @@ export default function MealsPage() {
               </div>
               <button 
                 type="submit" 
-                disabled={saving || profile?.role === "visitor"}
+                disabled={saving || profile?.role === "visitor" || (systemStartDate !== "" && selectedDate < systemStartDate)}
                 className="w-full flex justify-center items-center gap-2 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-200 dark:shadow-none hover:bg-green-700 disabled:opacity-50 transition-all hover:-translate-y-0.5"
               >
                 <PlusCircle className="h-4 w-4" />
