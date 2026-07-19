@@ -9,9 +9,10 @@ import {
   ArrowLeft, 
   Utensils, 
   Wallet, 
-  Receipt,
+  ShoppingCart,
   Calendar,
   Clock,
+  TrendingUp,
   X
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
@@ -38,6 +39,15 @@ interface PaymentEntry {
   date: any;
 }
 
+interface BazarEntry {
+  id: string;
+  date: any;
+  amount: number;
+  description: string;
+  spenderId: string;
+  spenderName: string;
+}
+
 interface MemberProfilePanelProps {
   userId: string | null;
   onClose: () => void;
@@ -47,6 +57,8 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
   const [member, setMember] = useState<UserProfile | null>(null);
   const [meals, setMeals] = useState<MealEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
+  const [bazarContributions, setBazarContributions] = useState<BazarEntry[]>([]);
+  const [mealRate, setMealRate] = useState(0);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -81,7 +93,7 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
       mealsData.sort((a, b) => b.date.localeCompare(a.date));
       setMeals(mealsData);
 
-      // 3. Fetch payments/deposits for this user (last 200) - sorted client-side to avoid composite index
+      // 3. Fetch payments/deposits for this user (last 200) - sorted client-side
       const paymentsQuery = query(
         collection(db, "payments"),
         where("userId", "==", userId),
@@ -100,9 +112,56 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
       });
       setPayments(paymentsData);
 
+      // 4. Fetch bazar contributions where this member is the spender
+      const bazarQuery = query(
+        collection(db, "bazar_costs"),
+        where("spenderId", "==", userId),
+        limit(200)
+      );
+      const bazarSnap = await getDocs(bazarQuery);
+      const bazarData: BazarEntry[] = [];
+      bazarSnap.forEach(d => {
+        bazarData.push({ id: d.id, ...d.data() } as BazarEntry);
+      });
+      bazarData.sort((a, b) => {
+        const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
+        const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+        return dateB.getTime() - dateA.getTime();
+      });
+      setBazarContributions(bazarData);
+
+      // 5. Fetch current month's meal rate for status calculation
+      const currentMonth = format(new Date(), "yyyy-MM");
+      const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", currentMonth));
+      if (ledgerDoc.exists()) {
+        const ledgerData = ledgerDoc.data();
+        setMealRate(ledgerData.mealRate || 0);
+      } else {
+        // Calculate meal rate on-the-fly from raw data
+        const bazarAllSnap = await getDocs(collection(db, "bazar_costs"));
+        let totalBazar = 0;
+        bazarAllSnap.forEach(d => {
+          const data = d.data();
+          const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
+          if (format(dateObj, "yyyy-MM") === currentMonth) {
+            totalBazar += Number(data.amount || 0);
+          }
+        });
+
+        const mealsAllSnap = await getDocs(collection(db, "meals"));
+        let totalMeals = 0;
+        mealsAllSnap.forEach(d => {
+          const data = d.data();
+          if (data.date && data.date.startsWith(currentMonth)) {
+            totalMeals += Number(data.totalMeals || 0);
+          }
+        });
+
+        setMealRate(totalMeals > 0 ? totalBazar / totalMeals : 0);
+      }
+
     } catch (error) {
       console.error("Error fetching member profile:", error);
-      // Clear loading state even on error so the UI doesn't hang
       setMember(null);
     } finally {
       setLoading(false);
@@ -114,9 +173,14 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
   const mealDeposits = payments
     .filter(p => p.paymentFor === "meal")
     .reduce((sum, p) => sum + p.amount, 0);
-  const rentDeposits = payments
-    .filter(p => p.paymentFor === "rent")
-    .reduce((sum, p) => sum + p.amount, 0);
+  const bazarContributed = bazarContributions.reduce((sum, b) => sum + b.amount, 0);
+
+  // Status calculation
+  const estimatedMealCost = totalMealsEaten * mealRate;
+  const totalDeposited = mealDeposits + bazarContributed;
+  const balance = totalDeposited - estimatedMealCost;
+  const isDue = balance < 0;
+  const isExtra = balance > 0;
 
   return (
     <AnimatePresence>
@@ -179,28 +243,53 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
                   </div>
                 </div>
 
-                {/* Summary Cards */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Utensils className="h-4 w-4 text-indigo-500" />
+                {/* Top Summary Card: Total Meals, Total Deposited, Total Bazar, Status */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700/50">
+                    <div className="flex items-center gap-1 mb-1">
+                      <Utensils className="h-3 w-3 text-indigo-500" />
                     </div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Meals</p>
-                    <p className="text-xl font-black text-gray-900 dark:text-white mt-1">{totalMealsEaten}</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Total Meals</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white mt-0.5">{totalMealsEaten}</p>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Wallet className="h-4 w-4 text-green-500" />
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700/50">
+                    <div className="flex items-center gap-1 mb-1">
+                      <Wallet className="h-3 w-3 text-green-500" />
                     </div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Meal Deposit</p>
-                    <p className="text-xl font-black text-green-600 dark:text-green-400 mt-1">৳{formatCurrency(mealDeposits)}</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Deposited</p>
+                    <p className="text-lg font-black text-green-600 dark:text-green-400 mt-0.5">৳{formatCurrency(mealDeposits)}</p>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Receipt className="h-4 w-4 text-blue-500" />
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-3 shadow-sm border border-gray-100 dark:border-gray-700/50">
+                    <div className="flex items-center gap-1 mb-1">
+                      <ShoppingCart className="h-3 w-3 text-orange-500" />
                     </div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Rent Paid</p>
-                    <p className="text-xl font-black text-blue-600 dark:text-blue-400 mt-1">৳{formatCurrency(rentDeposits)}</p>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Bazar Cost</p>
+                    <p className="text-lg font-black text-orange-600 dark:text-orange-400 mt-0.5">৳{formatCurrency(bazarContributed)}</p>
+                  </div>
+                  <div className={`rounded-xl p-3 shadow-sm border ${
+                    isDue
+                      ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50"
+                      : isExtra
+                      ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50"
+                      : "bg-gray-50 dark:bg-gray-800 border-gray-100 dark:border-gray-700/50"
+                  }`}>
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingUp className={`h-3 w-3 ${
+                        isDue ? "text-red-500" : isExtra ? "text-green-500" : "text-gray-400"
+                      }`} />
+                    </div>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                      {isDue ? "Due" : isExtra ? "Extra" : "Settled"}
+                    </p>
+                    <p className={`text-lg font-black mt-0.5 ${
+                      isDue
+                        ? "text-red-600 dark:text-red-400"
+                        : isExtra
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-gray-600 dark:text-gray-400"
+                    }`}>
+                      {isDue ? "৳" + formatCurrency(Math.abs(Math.round(balance))) : isExtra ? "৳" + formatCurrency(Math.round(balance)) : "—"}
+                    </p>
                   </div>
                 </div>
 
@@ -252,26 +341,26 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
                   <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
                       <Clock className="h-4 w-4 text-green-500" />
-                      Deposit History
+                      Daily Deposit History
                     </h3>
                     <span className="text-[10px] bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-bold">
-                      {payments.length} payments
+                      {payments.filter(p => p.paymentFor === "meal").length} payments
                     </span>
                   </div>
                   <div className="max-h-64 overflow-y-auto">
-                    {payments.length === 0 ? (
-                      <div className="p-6 text-center text-gray-400 italic text-xs">No payment records.</div>
+                    {payments.filter(p => p.paymentFor === "meal").length === 0 ? (
+                      <div className="p-6 text-center text-gray-400 italic text-xs">No deposit records.</div>
                     ) : (
                       <table className="min-w-full divide-y divide-gray-50 dark:divide-gray-700/50">
                         <thead className="bg-gray-50/30 dark:bg-gray-900/20 sticky top-0">
                           <tr>
                             <th className="px-4 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">Date</th>
-                            <th className="px-4 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">For</th>
+                            <th className="px-4 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">Method</th>
                             <th className="px-4 py-2 text-right text-[9px] font-bold text-gray-400 uppercase tracking-widest">Amount</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                          {payments.map(payment => {
+                          {payments.filter(p => p.paymentFor === "meal").map(payment => {
                             let dateObj: Date;
                             try {
                               dateObj = payment.date?.toDate ? payment.date.toDate() : (payment.date ? new Date(payment.date) : new Date());
@@ -285,16 +374,58 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
                                   {format(dateObj, "MMM dd, yyyy")}
                                 </td>
                                 <td className="px-4 py-2">
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-tight border ${
-                                    payment.paymentFor === "meal"
-                                      ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400"
-                                      : "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400"
-                                  }`}>
-                                    {payment.paymentFor === "meal" ? "Meal" : "Rent"}
+                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-bold text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+                                    {payment.paymentMethod || "Direct Deposit"}
                                   </span>
                                 </td>
                                 <td className="px-4 py-2 text-right text-sm font-black text-green-600 dark:text-green-400">
                                   ৳{formatCurrency(payment.amount)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bazar Contribution Log */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      <ShoppingCart className="h-4 w-4 text-orange-500" />
+                      Daily Bazar Contribution
+                    </h3>
+                    <span className="text-[10px] bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded-full font-bold">
+                      {bazarContributions.length} entries
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {bazarContributions.length === 0 ? (
+                      <div className="p-6 text-center text-gray-400 italic text-xs">No bazar contributions.</div>
+                    ) : (
+                      <table className="min-w-full divide-y divide-gray-50 dark:divide-gray-700/50">
+                        <thead className="bg-gray-50/30 dark:bg-gray-900/20 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">Date</th>
+                            <th className="px-4 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">Description</th>
+                            <th className="px-4 py-2 text-right text-[9px] font-bold text-gray-400 uppercase tracking-widest">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                          {bazarContributions.map(entry => {
+                            const dateObj = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+                            return (
+                              <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                <td className="px-4 py-2 text-[11px] font-semibold text-gray-900 dark:text-white">
+                                  {format(dateObj, "MMM dd, yyyy")}
+                                </td>
+                                <td className="px-4 py-2 text-[11px] text-gray-500 dark:text-gray-400 italic">
+                                  {entry.description || "—"}
+                                </td>
+                                <td className="px-4 py-2 text-right text-sm font-black text-orange-600 dark:text-orange-400">
+                                  ৳{formatCurrency(entry.amount)}
                                 </td>
                               </tr>
                             );

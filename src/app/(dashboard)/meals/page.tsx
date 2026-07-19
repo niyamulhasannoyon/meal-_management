@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, doc, getDoc, setDoc, query, where, addDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, query, where, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
-import { format, subDays } from "date-fns";
-import { Calculator, ShoppingCart, Utensils, Calendar, Users as UsersIcon, PlusCircle, Save } from "lucide-react";
+import { format } from "date-fns";
+import { Calculator, ShoppingCart, Utensils, Calendar, Users as UsersIcon, PlusCircle, Save, Edit3, Trash2, History, X } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
-import { sortUsers } from "@/lib/utils";
+import { sortUsers, formatCurrency } from "@/lib/utils";
 import toast from "react-hot-toast";
 interface MealEntry {
   id?: string;
@@ -18,6 +18,16 @@ interface MealEntry {
   dinner: number;
   totalMeals: number;
   createdAt?: string;
+}
+
+interface BazarEntry {
+  id: string;
+  date: any;
+  amount: number;
+  description: string;
+  addedBy: string;
+  spenderId: string;
+  spenderName: string;
 }
 
 import { motion } from "framer-motion";
@@ -48,10 +58,21 @@ export default function MealsPage() {
   const [bazarAmount, setBazarAmount] = useState("");
   const [bazarDesc, setBazarDesc] = useState("");
   const [bazarSpenderId, setBazarSpenderId] = useState("");
+  const [bazarEntries, setBazarEntries] = useState<BazarEntry[]>([]);
+  const [showBazarHistory, setShowBazarHistory] = useState(false);
   
+  // Edit Bazar state
+  const [editingBazar, setEditingBazar] = useState<BazarEntry | null>(null);
+  const [editBazarAmount, setEditBazarAmount] = useState("");
+  const [editBazarDesc, setEditBazarDesc] = useState("");
+  const [editBazarSpenderId, setEditBazarSpenderId] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [systemStartDate, setSystemStartDate] = useState("");
+
+  // Get current month from selected date
+  const currentMonth = format(new Date(selectedDate), "yyyy-MM");
 
   useEffect(() => {
     if (settings) {
@@ -61,6 +82,7 @@ export default function MealsPage() {
 
   useEffect(() => {
     fetchUsersAndMeals();
+    fetchBazarEntries();
   }, [selectedDate]);
 
   // Set default bazar spender when users list or profile loads
@@ -99,6 +121,32 @@ export default function MealsPage() {
 
     return () => clearInterval(interval);
   }, [selectedDate, isSubmittedForDate, loading, meals, settings]);
+
+  const fetchBazarEntries = async () => {
+    try {
+      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
+      const sysStart = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
+
+      const bazarSnap = await getDocs(collection(db, "bazar_costs"));
+      const entries: BazarEntry[] = [];
+      bazarSnap.forEach(d => {
+        const data = d.data();
+        const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
+        const dateStr = format(dateObj, "yyyy-MM-dd");
+        if (format(dateObj, "yyyy-MM") === currentMonth && (!sysStart || dateStr >= sysStart)) {
+          entries.push({ id: d.id, ...data } as BazarEntry);
+        }
+      });
+      entries.sort((a, b) => {
+        const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
+        const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+        return dateB.getTime() - dateA.getTime();
+      });
+      setBazarEntries(entries);
+    } catch (error) {
+      console.error("Error fetching bazar entries:", error);
+    }
+  };
 
   const fetchUsersAndMeals = async () => {
     setLoading(true);
@@ -148,7 +196,7 @@ export default function MealsPage() {
 
       // If no meals submitted for this date, try to copy previous day's meals as defaults
       if (!hasSubmitted) {
-        const prevDate = format(subDays(new Date(selectedDate), 1), "yyyy-MM-dd");
+        const prevDate = format(new Date(new Date(selectedDate).getTime() - 86400000), "yyyy-MM-dd");
         const prevMealsSnap = await getDocs(query(collection(db, "meals"), where("date", "==", prevDate)));
         const prevMeals: Record<string, MealEntry> = {};
         prevMealsSnap.forEach(doc => {
@@ -241,12 +289,80 @@ export default function MealsPage() {
       setBazarAmount("");
       setBazarDesc("");
       toast.success("Bazar cost added!");
+      fetchBazarEntries(); // Refresh bazar list
     } catch (error) {
       console.error("Error adding bazar:", error);
     } finally {
       setSaving(false);
     }
   };
+
+  const handleEditBazar = (entry: BazarEntry) => {
+    setEditingBazar(entry);
+    setEditBazarAmount(String(entry.amount));
+    setEditBazarDesc(entry.description || "");
+    setEditBazarSpenderId(entry.spenderId || "");
+  };
+
+  const handleUpdateBazar = async () => {
+    if (!editingBazar || !editBazarAmount) return;
+    setSaving(true);
+    try {
+      const spender = users.find(u => u.id === editBazarSpenderId);
+      await updateDoc(doc(db, "bazar_costs", editingBazar.id), {
+        amount: Number(editBazarAmount),
+        description: editBazarDesc,
+        spenderId: editBazarSpenderId,
+        spenderName: spender?.name || "Unknown"
+      });
+
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown User",
+        "UPDATED_BAZAR",
+        `Updated bazar cost: ${settings?.currencySymbol || "৳"}${editBazarAmount} (Spender: ${spender?.name || "Unknown"})`
+      );
+
+      toast.success("Bazar entry updated successfully!");
+      setEditingBazar(null);
+      setEditBazarAmount("");
+      setEditBazarDesc("");
+      setEditBazarSpenderId("");
+      fetchBazarEntries();
+    } catch (error) {
+      console.error("Error updating bazar:", error);
+      toast.error("Failed to update bazar entry.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteBazar = async (entryId: string) => {
+    if (!confirm("Are you sure you want to delete this bazar entry? This cannot be undone.")) return;
+    setSaving(true);
+    try {
+      const deletedEntry = bazarEntries.find(e => e.id === entryId);
+      await deleteDoc(doc(db, "bazar_costs", entryId));
+
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown User",
+        "DELETED_BAZAR",
+        `Deleted bazar cost of ${settings?.currencySymbol || "৳"}${deletedEntry?.amount || ""} (Spender: ${deletedEntry?.spenderName || "Unknown"})`
+      );
+
+      toast.success("Bazar entry deleted!");
+      fetchBazarEntries();
+    } catch (error) {
+      console.error("Error deleting bazar:", error);
+      toast.error("Failed to delete bazar entry.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Calculate bazar total for the month
+  const currentMonthBazarTotal = bazarEntries.reduce((sum, e) => sum + e.amount, 0);
 
   if (loading) {
     return (
@@ -384,8 +500,9 @@ export default function MealsPage() {
           </div>
         </div>
 
-        {/* Bazar Entry */}
-        <div>
+        {/* Bazar Section */}
+        <div className="space-y-6">
+          {/* Add Bazar Form */}
           <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50">
             <h2 className="text-lg font-semibold flex items-center gap-2 mb-6">
               <ShoppingCart className="h-5 w-5 text-indigo-600" />
@@ -440,9 +557,174 @@ export default function MealsPage() {
               </button>
             </form>
           </div>
-        </div>
 
+          {/* Bazar History Toggle & List */}
+          <div className="rounded-2xl bg-white shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 overflow-hidden">
+            <button
+              onClick={() => setShowBazarHistory(!showBazarHistory)}
+              className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5 text-indigo-600" />
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Bazar History ({format(new Date(selectedDate), "MMM yyyy")})
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
+                  Total: {settings?.currencySymbol || "৳"}{formatCurrency(currentMonthBazarTotal)}
+                </span>
+                <motion.div
+                  animate={{ rotate: showBazarHistory ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </motion.div>
+              </div>
+            </button>
+
+            {showBazarHistory && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                className="border-t border-gray-100 dark:border-gray-700"
+              >
+                {bazarEntries.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-gray-400 italic">
+                    No bazar entries for this month.
+                  </div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto">
+                    <table className="min-w-full divide-y divide-gray-50 dark:divide-gray-700/50">
+                      <thead className="bg-gray-50/50 dark:bg-gray-900/30 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">Date</th>
+                          <th className="px-3 py-2 text-left text-[9px] font-bold text-gray-400 uppercase tracking-widest">Spender</th>
+                          <th className="px-3 py-2 text-right text-[9px] font-bold text-gray-400 uppercase tracking-widest">Amount</th>
+                          <th className="px-3 py-2 text-center text-[9px] font-bold text-gray-400 uppercase tracking-widest">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                        {bazarEntries.map(entry => {
+                          const dateObj = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+                          return (
+                            <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                              <td className="px-3 py-2 text-[11px] font-semibold text-gray-900 dark:text-white whitespace-nowrap">
+                                {format(dateObj, "MMM dd")}
+                              </td>
+                              <td className="px-3 py-2 text-[11px] text-gray-600 dark:text-gray-400">
+                                {entry.spenderName || "Unknown"}
+                                {entry.description && (
+                                  <span className="block text-[9px] text-gray-400 italic">{entry.description}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-[11px] text-right font-bold text-green-600 dark:text-green-400 whitespace-nowrap">
+                                {settings?.currencySymbol || "৳"}{formatCurrency(entry.amount)}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {(profile?.role === "admin" || profile?.role === "moderator") && (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => handleEditBazar(entry)}
+                                      className="p-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                      title="Edit Bazar"
+                                    >
+                                      <Edit3 className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteBazar(entry.id)}
+                                      disabled={saving}
+                                      className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                      title="Delete Bazar"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Edit Bazar Modal */}
+      {editingBazar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Edit Bazar Entry</h3>
+              <button
+                onClick={() => setEditingBazar(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Amount ({settings?.currencySymbol || "৳"})</label>
+                <input
+                  type="number"
+                  required
+                  value={editBazarAmount}
+                  onChange={e => setEditBazarAmount(e.target.value)}
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  placeholder="e.g. 500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description (Optional)</label>
+                <input
+                  type="text"
+                  value={editBazarDesc}
+                  onChange={e => setEditBazarDesc(e.target.value)}
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  placeholder="e.g. Vegetables and Fish"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Spender (Who paid?)</label>
+                <select
+                  value={editBazarSpenderId}
+                  onChange={e => setEditBazarSpenderId(e.target.value)}
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                >
+                  <option value="" disabled>Select Member</option>
+                  {users.map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setEditingBazar(null)}
+                  className="px-4 py-2 text-sm font-bold text-gray-500 hover:text-gray-900 dark:text-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateBazar}
+                  disabled={saving || !editBazarAmount}
+                  className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Update Entry"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.main>
   );
 }
