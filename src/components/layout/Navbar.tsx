@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { Home, LogOut, ShieldCheck, User, Settings } from "lucide-react";
+import { LogOut, ShieldCheck, User, Settings } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Avatar from "./Avatar";
@@ -16,8 +16,8 @@ export default function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-20 justify-between items-center">
           <Link href="/" className="flex items-center gap-3 group">
-            <div className="bg-indigo-600 p-2 rounded-xl group-hover:scale-110 transition-transform shadow-lg shadow-indigo-200 dark:shadow-none">
-              <Home className="h-5 w-5 text-white" />
+            <div className="p-1 rounded-xl group-hover:scale-110 transition-transform">
+              <img src="/logo-icon.png" alt="Logo" className="h-9 w-9 object-contain" />
             </div>
             <div className="flex flex-col">
               <h1 className="text-lg font-black text-gray-900 dark:text-white leading-tight">

@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, doc, setDoc, getDoc, addDoc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format } from "date-fns";
-import { Calculator, Lock, Unlock, FileText, PlusCircle, Search, Download, Printer, History } from "lucide-react";
+import { Calculator, Lock, Unlock, FileText, PlusCircle, Search, Download, Printer, History, Edit3, Trash2, ExternalLink } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
 import { sortUsers, formatCurrency } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
+import MemberProfilePanel from "@/components/profile/MemberProfilePanel";
 import toast from "react-hot-toast";
 interface LedgerUser {
   id: string;
@@ -66,9 +67,18 @@ export default function LedgerPage() {
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Profile Panel State
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
   // Payment history log states
   const [showPaymentsLog, setShowPaymentsLog] = useState(false);
   const [paymentsList, setPaymentsList] = useState<any[]>([]);
+
+  // Edit payment state
+  const [editingPayment, setEditingPayment] = useState<any | null>(null);
+  const [editPaymentAmount, setEditPaymentAmount] = useState("");
+  const [editPaymentMethod, setEditPaymentMethod] = useState("Cash");
+  const [editPaymentRef, setEditPaymentRef] = useState("");
 
   const fetchPaymentsList = async () => {
     try {
@@ -166,7 +176,6 @@ export default function LedgerPage() {
       const mealsSnap = await getDocs(collection(db, "meals"));
       let tMeals = 0;
       const userMealsCount: Record<string, number> = {};
-      const userMealDeposits: Record<string, number> = {};
       mealsSnap.forEach(d => {
         const data = d.data();
         const dateStr = data.date || "";
@@ -174,7 +183,6 @@ export default function LedgerPage() {
           const meals = Number(data.totalMeals || 0);
           tMeals += meals;
           userMealsCount[data.userId] = (userMealsCount[data.userId] || 0) + meals;
-          userMealDeposits[data.userId] = (userMealDeposits[data.userId] || 0) + Number(data.deposit || 0);
         }
       });
 
@@ -237,8 +245,7 @@ export default function LedgerPage() {
         const uCost = uTotalMeals * rate;
         const uDirectDep = userDeposits[u.id] || 0;
         const uBazarDep = bazarDeposits[u.id] || 0;
-        const uMealDep = userMealDeposits[u.id] || 0;
-        const totalDep = uDirectDep + uBazarDep + uMealDep;
+        const totalDep = uDirectDep + uBazarDep;
 
         // If the month is NOT closed, we ALWAYS use the real-time calculated totalDep.
         // This ensures that adding money in meals/payments immediately reflects here.
@@ -365,6 +372,58 @@ export default function LedgerPage() {
       );
     } catch (error) {
       console.error("Error settling due:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!confirm("Are you sure you want to delete this payment record? This cannot be undone.")) return;
+    setSaving(true);
+    try {
+      await deleteDoc(doc(db, "payments", paymentId));
+      toast.success("Payment record deleted!");
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown User",
+        "DELETED_PAYMENT",
+        `Deleted a meal payment of ${currencySymbol}${paymentsList.find(p => p.id === paymentId)?.amount || ""}`
+      );
+      fetchPaymentsList();
+      fetchLedger(); // Refresh calculations
+    } catch (error) {
+      console.error("Error deleting payment:", error);
+      toast.error("Failed to delete payment.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdatePayment = async () => {
+    if (!editingPayment || !editPaymentAmount) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "payments", editingPayment.id), {
+        amount: Number(editPaymentAmount),
+        paymentMethod: editPaymentMethod,
+        reference: editPaymentRef || ""
+      });
+      toast.success("Payment updated successfully!");
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown User",
+        "UPDATED_PAYMENT",
+        `Updated meal payment of ${currencySymbol}${editPaymentAmount} via ${editPaymentMethod}`
+      );
+      setEditingPayment(null);
+      setEditPaymentAmount("");
+      setEditPaymentMethod("Cash");
+      setEditPaymentRef("");
+      fetchPaymentsList();
+      fetchLedger(); // Refresh calculations
+    } catch (error) {
+      console.error("Error updating payment:", error);
+      toast.error("Failed to update payment.");
     } finally {
       setSaving(false);
     }
@@ -539,9 +598,12 @@ export default function LedgerPage() {
             >
               {ledgerUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase())).map((u) => (
                 <motion.tr variants={item} key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                  <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-bold text-gray-900 sm:pl-6 dark:text-white flex items-center gap-3">
-                    <Avatar name={u.name} size={32} />
-                    <span>{u.name}</span>
+                  <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-bold text-gray-900 sm:pl-6 dark:text-white">
+                    <button onClick={() => setSelectedUserId(u.id)} className="flex items-center gap-3 group text-left">
+                      <Avatar name={u.name} size={32} />
+                      <span className="group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{u.name}</span>
+                      <ExternalLink className="h-3 w-3 text-gray-300 group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all" />
+                    </button>
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-center text-gray-600 dark:text-gray-300">
                     {isEditingLedger ? (
@@ -684,41 +746,111 @@ export default function LedgerPage() {
         </div>
       )}
 
+      {/* Member Profile Panel */}
+      <MemberProfilePanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+
       {/* Payment History Log Modal */}
       {showPaymentsLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:hidden">
-          <div className="w-full max-w-4xl rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex flex-col max-h-[85vh]">
+          <div className="w-full max-w-5xl rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800 border border-gray-100 dark:border-gray-700 flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-3">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <History className="h-5 w-5 text-indigo-500" />
                 Payment & Deposit History ({format(new Date(currentMonth), 'MMMM yyyy')})
               </h3>
               <button
-                onClick={() => setShowPaymentsLog(false)}
+                onClick={() => { setShowPaymentsLog(false); setEditingPayment(null); setEditPaymentAmount(""); }}
                 className="text-gray-400 hover:text-gray-600 text-xl font-bold"
               >
                 ×
               </button>
             </div>
+
+            {/* Edit Payment Inline Form */}
+            {editingPayment && (
+              <div className="mb-4 p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30 flex flex-col sm:flex-row gap-4 items-end">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Amount ({currencySymbol})</label>
+                  <input
+                    type="number"
+                    value={editPaymentAmount}
+                    onChange={e => setEditPaymentAmount(e.target.value)}
+                    className="w-full rounded-lg border-gray-200 px-3 py-2 text-sm dark:bg-gray-700 dark:border-gray-600 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="w-full sm:w-40">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Method</label>
+                  <select
+                    value={editPaymentMethod}
+                    onChange={e => setEditPaymentMethod(e.target.value)}
+                    className="w-full rounded-lg border-gray-200 px-3 py-2 text-sm dark:bg-gray-700 dark:border-gray-600 focus:ring-indigo-500"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="bKash">bKash</option>
+                    <option value="Nagad">Nagad</option>
+                    <option value="Rocket">Rocket</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Reference</label>
+                  <input
+                    type="text"
+                    value={editPaymentRef}
+                    onChange={e => setEditPaymentRef(e.target.value)}
+                    placeholder="TxID"
+                    className="w-full rounded-lg border-gray-200 px-3 py-2 text-sm dark:bg-gray-700 dark:border-gray-600 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={handleUpdatePayment}
+                    disabled={saving || !editPaymentAmount}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => { setEditingPayment(null); setEditPaymentAmount(""); }}
+                    className="rounded-lg bg-gray-200 px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             
             <div className="overflow-x-auto flex-1 max-h-[60vh] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-700">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900/50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Member</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Type</th>
                     <th className="px-4 py-3 text-right text-xs font-bold text-gray-400 uppercase tracking-widest">Amount</th>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Method</th>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Reference</th>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">Date</th>
+                    {(profile?.role === "admin" || profile?.role === "moderator") && (
+                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-400 uppercase tracking-widest">Actions</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-sm">
                   {paymentsList.map(pay => {
                     const member = ledgerUsers.find(u => u.id === pay.userId);
                     return (
-                      <tr key={pay.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <tr key={pay.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td className="px-4 py-3 font-bold text-gray-900 dark:text-white">
                           {member?.name || "Deleted User"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-tight border ${
+                            pay.paymentFor === "meal"
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800"
+                              : "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800"
+                          }`}>
+                            {pay.paymentFor === "meal" ? "Meal" : "Rent"}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right font-black text-green-600">
                           {currencySymbol} {formatCurrency(pay.amount)}
@@ -732,12 +864,38 @@ export default function LedgerPage() {
                         <td className="px-4 py-3 text-gray-400 text-xs">
                           {pay.date ? format(pay.date, "dd MMM yyyy, hh:mm a") : "-"}
                         </td>
+                        {(profile?.role === "admin" || profile?.role === "moderator") && (
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setEditingPayment(pay);
+                                  setEditPaymentAmount(String(pay.amount));
+                                  setEditPaymentMethod(pay.paymentMethod || "Cash");
+                                  setEditPaymentRef(pay.reference || "");
+                                }}
+                                className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                title="Edit Payment"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeletePayment(pay.id)}
+                                disabled={saving}
+                                className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title="Delete Payment"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
                   {paymentsList.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-gray-400 italic">
+                      <td colSpan={7} className="px-4 py-8 text-center text-gray-400 italic">
                         No payments recorded for this month.
                       </td>
                     </tr>

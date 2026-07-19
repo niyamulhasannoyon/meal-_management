@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
-import { Users, Shield, UserCheck, UserX, Trash2, UserPlus, Edit2 } from "lucide-react";
+import { Users, Shield, UserCheck, UserX, Trash2, UserPlus, Edit2, ExternalLink } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
 import toast from "react-hot-toast";
-import { sortUsers, formatCurrency } from "@/lib/utils";
+import { sortUsers } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
+import MemberProfilePanel from "@/components/profile/MemberProfilePanel";
 
 import { motion } from "framer-motion";
 
@@ -43,6 +44,9 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+
+  // Profile Panel State
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
@@ -292,9 +296,7 @@ export default function UsersPage() {
             <thead className="bg-gray-50 dark:bg-gray-900/50">
               <tr>
                 <th scope="col" className="py-4 pl-4 pr-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider sm:pl-6 dark:text-white">Member</th>
-                <th scope="col" className="px-3 py-4 text-left text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Role</th>
-                <th scope="col" className="px-3 py-4 text-left text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Inclusion</th>
-                <th scope="col" className="px-3 py-4 text-left text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Balance</th>
+                <th scope="col" className="px-3 py-4 text-left text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Role</th>                  <th scope="col" className="px-3 py-4 text-left text-sm font-bold text-gray-900 uppercase tracking-wider dark:text-white">Inclusion</th>
                 <th scope="col" className="relative py-4 pl-3 pr-4 sm:pr-6"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -316,13 +318,16 @@ export default function UsersPage() {
                         <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="rounded-lg border-gray-200 px-3 py-1.5 text-xs dark:bg-gray-700" placeholder="Email" />
                       </div>
                     ) : (
-                      <div className="flex items-center gap-3">
+                      <button onClick={() => setSelectedUserId(user.id)} className="flex items-center gap-3 group text-left w-full">
                         <Avatar name={user.name} size={36} />
                         <div>
-                          <div className="font-bold text-gray-900 dark:text-white">{user.name}</div>
+                          <div className="font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                            {user.name}
+                            <ExternalLink className="h-3 w-3 text-gray-300 group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all" />
+                          </div>
                           <div className="text-[10px] font-medium text-gray-400 mt-0.5">{user.email}</div>
                         </div>
-                      </div>
+                      </button>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm">
@@ -358,11 +363,6 @@ export default function UsersPage() {
                       {user.isPermanent ? "Permanent" : "Guest"}
                     </button>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-sm font-black">
-                    <span className={user.currentBalance >= 0 ? "text-green-600" : "text-red-600"}>
-                      ৳ {formatCurrency(user.currentBalance)}
-                    </span>
-                  </td>
                   <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                     {profile?.role === "admin" && (
                       <div className="flex justify-end gap-2">
@@ -388,6 +388,9 @@ export default function UsersPage() {
           </table>
         </div>
       </div>
+
+      {/* Member Profile Panel */}
+      <MemberProfilePanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
     </motion.main>
   );
 }

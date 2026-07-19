@@ -4,7 +4,6 @@ import { useState } from "react";
 import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth, googleProvider, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import { LogIn } from "lucide-react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -60,8 +59,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 dark:bg-gray-900 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8 rounded-3xl bg-white p-10 shadow-xl dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
         <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-purple-600 text-white shadow-lg shadow-purple-200 dark:shadow-none mb-4">
-            <LogIn className="h-6 w-6" />
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl mb-4">
+            <img src="/logo-icon.png" alt="Logo" className="h-16 w-16 object-contain" />
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">Welcome back</h2>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
