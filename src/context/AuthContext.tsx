@@ -82,14 +82,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let profileUnsub: (() => void) | null = null;
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       
+      if (profileUnsub) {
+        profileUnsub();
+        profileUnsub = null;
+      }
+
       if (currentUser) {
-        try {
-          const docRef = doc(db, "users", currentUser.uid);
-          const docSnap = await getDoc(docRef);
-          
+        const docRef = doc(db, "users", currentUser.uid);
+        profileUnsub = onSnapshot(docRef, async (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             const adminEmails = ["niyamulhasanbd@gmail.com", "niyamulhasan1089@gmail.com"];
@@ -108,18 +113,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               isPermanent: data.isPermanent || false,
               currentBalance: data.currentBalance || 0,
             } as UserProfile);
+          } else {
+            setProfile(null);
           }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-        }
+          setLoading(false);
+        }, (error) => {
+          console.error("Error listening to user profile:", error);
+          setLoading(false);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (profileUnsub) profileUnsub();
+    };
   }, []);
 
   const signOut = async () => {

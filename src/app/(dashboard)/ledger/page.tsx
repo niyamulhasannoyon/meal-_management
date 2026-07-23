@@ -167,7 +167,7 @@ export default function LedgerPage() {
       const allUsers: UserProfile[] = [];
       usersSnap.forEach((d) => {
         const data = d.data();
-        if (data.role === "member") {
+        if (data.role !== "visitor") {
           allUsers.push({ id: d.id, ...data } as UserProfile);
         }
       });

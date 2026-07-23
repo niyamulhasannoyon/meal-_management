@@ -58,8 +58,9 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         // Admins can update anything
         isAdmin()
-        // Moderators can toggle isPermanent status
+        // Moderators can toggle isPermanent status or approve pending visitors to member
         || (isModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanent']))
+        || (isModerator() && resource.data.role == 'visitor' && request.resource.data.role == 'member' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']))
         // Users can update their own name/email (but not role or balance)
         || (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email']))
       );

@@ -1,13 +1,30 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { LogOut, ShieldCheck, User, Settings } from "lucide-react";
+import { LogOut, ShieldCheck, Users, Settings } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Avatar from "./Avatar";
+import { useEffect, useState } from "react";
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export default function Navbar() {
   const { user, profile, settings, signOut } = useAuth();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (profile?.role === "admin" || profile?.role === "moderator") {
+      const unsub = onSnapshot(collection(db, "users"), (snapshot) => {
+        let count = 0;
+        snapshot.forEach((d) => {
+          if (d.data().role === "visitor") count++;
+        });
+        setPendingCount(count);
+      });
+      return () => unsub();
+    }
+  }, [profile?.role]);
 
   if (!user) return null;
 
@@ -26,7 +43,7 @@ export default function Navbar() {
               <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Premium Dashboard</span>
             </div>
           </Link>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 sm:gap-4">
             <div className="hidden sm:flex items-center gap-3">
               <Avatar name={profile?.name || user.email || "User"} size={36} />
               <div className="flex flex-col items-end">
@@ -39,8 +56,24 @@ export default function Navbar() {
                 <span className="text-[10px] text-gray-400 font-medium">Logged in successfully</span>
               </div>
             </div>
+
+            {(profile?.role === "admin" || profile?.role === "moderator") && (
+              <Link 
+                href="/users" 
+                className="relative p-2.5 rounded-xl text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-all flex items-center gap-1.5 font-bold text-xs"
+                title="Manage Members & Approvals"
+              >
+                <Users className="h-5 w-5" />
+                {pendingCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-black text-white shadow-md animate-pulse">
+                    {pendingCount}
+                  </span>
+                )}
+              </Link>
+            )}
+
             {profile?.role === "admin" && (
-              <Link href="/settings" className="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-all">
+              <Link href="/settings" className="p-2.5 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-all" title="Settings">
                 <Settings className="h-5 w-5" />
               </Link>
             )}

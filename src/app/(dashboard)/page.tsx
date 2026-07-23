@@ -47,6 +47,7 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState<any[]>([]);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     const currentMonth = format(new Date(), "yyyy-MM");
@@ -142,13 +143,17 @@ export default function Dashboard() {
 
     const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
       const activeMembers: string[] = [];
+      let pending = 0;
       snapshot.forEach(docSnap => {
         const uData = docSnap.data();
-        if (uData.role === "member") {
+        if (uData.role === "visitor") {
+          pending++;
+        } else {
           activeMembers.push(docSnap.id);
         }
       });
       membersList = activeMembers;
+      setPendingCount(pending);
       updateStats();
     });
 
@@ -260,6 +265,38 @@ export default function Dashboard() {
           {format(new Date(), "EEEE, MMM dd, yyyy")}
         </div>
       </motion.div>
+
+      {/* PENDING APPROVAL ALERT FOR ADMINS/MODERATORS */}
+      {(profile?.role === "admin" || profile?.role === "moderator") && pendingCount > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/15 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white font-black shadow-md shadow-amber-500/30">
+              <Clock className="h-5 w-5 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-amber-950 dark:text-amber-200 text-base flex items-center gap-2">
+                Pending Member Approvals
+                <span className="inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-xs font-black text-white">
+                  {pendingCount} waiting
+                </span>
+              </h3>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                New member accounts are registered and awaiting your approval to access the mess.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/users"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all hover:scale-105 shrink-0"
+          >
+            Review & Approve Members
+          </Link>
+        </motion.div>
+      )}
 
       <motion.div 
         variants={container}

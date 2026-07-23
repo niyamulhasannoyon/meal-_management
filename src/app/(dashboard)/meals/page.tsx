@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, getDocs, doc, getDoc, setDoc, query, where, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, query, where, addDoc, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format } from "date-fns";
@@ -82,7 +82,6 @@ export default function MealsPage() {
 
   useEffect(() => {
     fetchUsersAndMeals();
-    fetchBazarEntries();
   }, [selectedDate]);
 
   // Set default bazar spender when users list or profile loads
@@ -122,18 +121,15 @@ export default function MealsPage() {
     return () => clearInterval(interval);
   }, [selectedDate, isSubmittedForDate, loading, meals, settings]);
 
-  const fetchBazarEntries = async () => {
-    try {
-      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
-      const sysStart = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
-
-      const bazarSnap = await getDocs(collection(db, "bazar_costs"));
+  // Real-time bazar listener — automatically updates whenever bazar_costs changes in Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "bazar_costs"), (snapshot) => {
       const entries: BazarEntry[] = [];
-      bazarSnap.forEach(d => {
+      snapshot.forEach(d => {
         const data = d.data();
         const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
         const dateStr = format(dateObj, "yyyy-MM-dd");
-        if (format(dateObj, "yyyy-MM") === currentMonth && (!sysStart || dateStr >= sysStart)) {
+        if (format(dateObj, "yyyy-MM") === currentMonth && (!systemStartDate || dateStr >= systemStartDate)) {
           entries.push({ id: d.id, ...data } as BazarEntry);
         }
       });
@@ -143,10 +139,12 @@ export default function MealsPage() {
         return dateB.getTime() - dateA.getTime();
       });
       setBazarEntries(entries);
-    } catch (error) {
-      console.error("Error fetching bazar entries:", error);
-    }
-  };
+    }, (error) => {
+      console.error("Real-time bazar listener error:", error);
+    });
+
+    return () => unsubscribe();
+  }, [currentMonth, systemStartDate]);
 
   const fetchUsersAndMeals = async () => {
     setLoading(true);
@@ -157,7 +155,7 @@ export default function MealsPage() {
       const usersData: UserProfile[] = [];
       usersSnap.forEach((doc) => {
         const data = doc.data();
-        if (data.role === "member") {
+        if (data.role !== "visitor") {
           usersData.push({ id: doc.id, ...data } as UserProfile);
         }
       });
@@ -289,7 +287,6 @@ export default function MealsPage() {
       setBazarAmount("");
       setBazarDesc("");
       toast.success("Bazar cost added!");
-      fetchBazarEntries(); // Refresh bazar list
     } catch (error) {
       console.error("Error adding bazar:", error);
     } finally {
@@ -328,7 +325,6 @@ export default function MealsPage() {
       setEditBazarAmount("");
       setEditBazarDesc("");
       setEditBazarSpenderId("");
-      fetchBazarEntries();
     } catch (error) {
       console.error("Error updating bazar:", error);
       toast.error("Failed to update bazar entry.");
@@ -352,7 +348,6 @@ export default function MealsPage() {
       );
 
       toast.success("Bazar entry deleted!");
-      fetchBazarEntries();
     } catch (error) {
       console.error("Error deleting bazar:", error);
       toast.error("Failed to delete bazar entry.");
@@ -361,7 +356,7 @@ export default function MealsPage() {
     }
   };
 
-  // Calculate bazar total for the month
+  // Derive bazar total from the live bazar entries state (avoids redundant state)
   const currentMonthBazarTotal = bazarEntries.reduce((sum, e) => sum + e.amount, 0);
 
   if (loading) {
