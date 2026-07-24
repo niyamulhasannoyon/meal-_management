@@ -188,8 +188,10 @@ export default function Dashboard() {
     const unsubscribeMeals = onSnapshot(collection(db, "meals"), (snapshot) => {
       const data: any[] = [];
       snapshot.forEach(doc => {
-        if (doc.id.startsWith(currentMonth)) {
-          data.push({ id: doc.id, ...doc.data() });
+        const mData = doc.data();
+        const dateStr = mData.date || (doc.id.length >= 7 ? doc.id.substring(0, 10) : "");
+        if (dateStr && dateStr.startsWith(currentMonth)) {
+          data.push({ id: doc.id, ...mData });
         }
       });
       mealsRaw = data;

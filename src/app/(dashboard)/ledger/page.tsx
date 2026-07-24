@@ -176,13 +176,17 @@ export default function LedgerPage() {
       const mealsSnap = await getDocs(collection(db, "meals"));
       let tMeals = 0;
       const userMealsCount: Record<string, number> = {};
+      const activeMemberIds = allUsers.map(u => u.id);
+
       mealsSnap.forEach(d => {
         const data = d.data();
         const dateStr = data.date || "";
         if (dateStr && dateStr.startsWith(currentMonth) && (!systemStartDate || dateStr >= systemStartDate)) {
-          const meals = Number(data.totalMeals || 0);
-          tMeals += meals;
-          userMealsCount[data.userId] = (userMealsCount[data.userId] || 0) + meals;
+          if (activeMemberIds.includes(data.userId)) {
+            const meals = Number(data.totalMeals || 0);
+            tMeals += meals;
+            userMealsCount[data.userId] = (userMealsCount[data.userId] || 0) + meals;
+          }
         }
       });
 
