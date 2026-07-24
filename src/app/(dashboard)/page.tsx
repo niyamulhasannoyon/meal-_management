@@ -146,9 +146,9 @@ export default function Dashboard() {
       let pending = 0;
       snapshot.forEach(docSnap => {
         const uData = docSnap.data();
-        if (uData.role === "visitor") {
+        if (uData.role === "pending") {
           pending++;
-        } else {
+        } else if (uData.role === "member" || uData.role === "moderator" || uData.role === "admin") {
           activeMembers.push(docSnap.id);
         }
       });

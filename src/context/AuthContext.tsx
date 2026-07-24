@@ -9,7 +9,7 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "moderator" | "member" | "visitor";
+  role: "admin" | "moderator" | "member" | "visitor" | "pending";
   isPermanent: boolean;
   currentBalance: number;
 }

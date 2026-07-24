@@ -29,8 +29,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // Page-level lock for new/unapproved users (visitors)
-  if (profile?.role === "visitor") {
+  // Page-level lock for unapproved users (pending)
+  if (profile?.role === "pending") {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors duration-300">
         <Navbar />
@@ -48,7 +48,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Welcome to the mess, <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{profile.name}</span>! Your account has been registered successfully.
             </p>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-4 bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-              Please contact your mess administrator or moderator to activate your account as a member.
+              Please contact your mess administrator or moderator to activate your account as a visitor or member.
             </p>
           </motion.div>
         </div>

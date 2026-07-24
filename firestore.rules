@@ -51,16 +51,16 @@ service cloud.firestore {
       
       allow create: if isAuthenticated() 
         && request.auth.uid == userId
-        && request.resource.data.role == 'visitor'
+        && (request.resource.data.role == 'pending' || request.resource.data.role == 'visitor')
         && request.resource.data.currentBalance == 0
         && request.resource.data.isPermanent == false;
 
       allow update: if isAuthenticated() && (
         // Admins can update anything
         isAdmin()
-        // Moderators can toggle isPermanent status or approve pending visitors to member
+        // Moderators can toggle isPermanent status or approve pending accounts to visitor or member
         || (isModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanent']))
-        || (isModerator() && resource.data.role == 'visitor' && request.resource.data.role == 'member' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']))
+        || (isModerator() && (resource.data.role == 'pending' || resource.data.role == 'visitor') && (request.resource.data.role == 'visitor' || request.resource.data.role == 'member') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']))
         // Users can update their own name/email (but not role or balance)
         || (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email']))
       );

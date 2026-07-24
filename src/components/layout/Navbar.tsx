@@ -18,7 +18,7 @@ export default function Navbar() {
       const unsub = onSnapshot(collection(db, "users"), (snapshot) => {
         let count = 0;
         snapshot.forEach((d) => {
-          if (d.data().role === "visitor") count++;
+          if (d.data().role === "pending") count++;
         });
         setPendingCount(count);
       });

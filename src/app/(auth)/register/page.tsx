@@ -25,7 +25,7 @@ export default function RegisterPage() {
       await setDoc(doc(db, "users", user.uid), {
         name: name,
         email: email,
-        role: "visitor",
+        role: "pending",
         isPermanent: false,
         currentBalance: 0,
         createdAt: serverTimestamp(),
@@ -52,7 +52,7 @@ export default function RegisterPage() {
         await setDoc(docRef, {
           name: user.displayName,
           email: user.email,
-          role: "visitor",
+          role: "pending",
           isPermanent: false,
           currentBalance: 0,
           createdAt: serverTimestamp(),

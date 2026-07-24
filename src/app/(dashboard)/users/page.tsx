@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
-import { Users, Shield, UserCheck, UserX, Trash2, UserPlus, Edit2, ExternalLink, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Users, Shield, UserCheck, UserX, Trash2, UserPlus, Edit2, ExternalLink, Clock, CheckCircle2, Eye, UserCheck2 } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
 import toast from "react-hot-toast";
 import { sortUsers } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
 import MemberProfilePanel from "@/components/profile/MemberProfilePanel";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 const container = {
   hidden: { opacity: 0 },
@@ -65,7 +65,7 @@ export default function UsersPage() {
     return () => unsub();
   }, []);
 
-  const handleApproveVisitor = async (userId: string, targetRole: "member" | "moderator" | "admin" = "member") => {
+  const handleApproveVisitor = async (userId: string, targetRole: "visitor" | "member" | "moderator" | "admin" = "visitor") => {
     if (profile?.role !== "admin" && profile?.role !== "moderator") {
       return toast.error("Only admins or moderators can approve members");
     }
@@ -81,10 +81,10 @@ export default function UsersPage() {
         `Approved ${userToApprove?.name || "Unknown"} as ${targetRole}`
       );
       
-      toast.success(`${userToApprove?.name || "Member"} approved successfully!`);
+      toast.success(`${userToApprove?.name || "User"} approved as ${targetRole.toUpperCase()}!`);
     } catch (error) {
       console.error("Error approving member:", error);
-      toast.error("Failed to approve member");
+      toast.error("Failed to approve user");
     } finally {
       setUpdating(null);
     }
@@ -138,7 +138,7 @@ export default function UsersPage() {
 
   const handleDeleteUser = async (userId: string) => {
     if (profile?.role !== "admin" && profile?.role !== "moderator") return;
-    if (!confirm("Are you sure you want to delete/reject this member account?")) return;
+    if (!confirm("Are you sure you want to delete/reject this account?")) return;
     
     setUpdating(userId);
     try {
@@ -242,7 +242,7 @@ export default function UsersPage() {
     );
   }
 
-  const pendingVisitors = users.filter(u => u.role === "visitor");
+  const pendingUsers = users.filter(u => u.role === "pending");
 
   return (
     <motion.main 
@@ -254,9 +254,9 @@ export default function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <Users className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
-            Manage Members
+            Manage Members & Users
           </h1>
-          <p className="mt-1 text-sm text-gray-500">View and manage all mess members, pending approvals, and roles.</p>
+          <p className="mt-1 text-sm text-gray-500">View and manage mess members, visitors, pending approvals, and roles.</p>
         </div>
         {profile?.role === "admin" && (
           <button
@@ -270,7 +270,7 @@ export default function UsersPage() {
       </div>
 
       {/* PENDING APPROVALS SECTION FOR ADMINS / MODERATORS */}
-      {pendingVisitors.length > 0 && (
+      {pendingUsers.length > 0 && (
         <motion.div 
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -283,53 +283,65 @@ export default function UsersPage() {
               </div>
               <div>
                 <h3 className="text-lg font-black text-amber-950 dark:text-amber-200 flex items-center gap-2">
-                  Pending Member Approvals
+                  Pending Approvals
                   <span className="inline-flex items-center rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-extrabold text-white">
-                    {pendingVisitors.length} waiting
+                    {pendingUsers.length} waiting
                   </span>
                 </h3>
                 <p className="text-xs text-amber-700 dark:text-amber-300">
-                  The following accounts registered and are waiting for your approval to access the mess dashboard.
+                  New registered users waiting for your approval to access the mess dashboard. Approve them as Visitor or Member.
                 </p>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingVisitors.map((visitor) => (
+            {pendingUsers.map((pendingUser) => (
               <motion.div 
-                key={visitor.id}
+                key={pendingUser.id}
                 whileHover={{ y: -2 }}
                 className="flex flex-col justify-between bg-white dark:bg-gray-800 p-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 shadow-sm"
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <Avatar name={visitor.name} size={42} />
+                  <Avatar name={pendingUser.name} size={42} />
                   <div className="overflow-hidden">
-                    <h4 className="font-bold text-gray-900 dark:text-white truncate">{visitor.name}</h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{visitor.email}</p>
+                    <h4 className="font-bold text-gray-900 dark:text-white truncate">{pendingUser.name}</h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{pendingUser.email}</p>
                     <span className="inline-block mt-1 text-[10px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
-                      Visitor / Pending
+                      Pending Approval
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                  <button
-                    onClick={() => handleApproveVisitor(visitor.id, "member")}
-                    disabled={updating === visitor.id}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition-all"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Approve Member
-                  </button>
-                  <button
-                    onClick={() => handleDeleteUser(visitor.id)}
-                    disabled={updating === visitor.id}
-                    className="inline-flex items-center justify-center p-2 rounded-xl bg-gray-100 hover:bg-red-50 hover:text-red-600 dark:bg-gray-700 dark:hover:bg-red-950/50 text-gray-500 transition-all"
-                    title="Reject / Delete Account"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                <div className="flex flex-col gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleApproveVisitor(pendingUser.id, "visitor")}
+                      disabled={updating === pendingUser.id}
+                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-blue-600 px-2.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-all"
+                      title="Approve as Visitor (Read-only guest)"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Approve Visitor
+                    </button>
+                    <button
+                      onClick={() => handleApproveVisitor(pendingUser.id, "member")}
+                      disabled={updating === pendingUser.id}
+                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition-all"
+                      title="Approve as Member (Full mess member)"
+                    >
+                      <UserCheck2 className="h-3.5 w-3.5" />
+                      Approve Member
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(pendingUser.id)}
+                      disabled={updating === pendingUser.id}
+                      className="inline-flex items-center justify-center p-2 rounded-xl bg-gray-100 hover:bg-red-50 hover:text-red-600 dark:bg-gray-700 dark:hover:bg-red-950/50 text-gray-500 transition-all"
+                      title="Reject / Delete Account"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             ))}
@@ -412,18 +424,41 @@ export default function UsersPage() {
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm">
-                    {user.role === "visitor" ? (
+                    {user.role === "pending" ? (
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 uppercase tracking-tighter border border-amber-200 dark:border-amber-800">
-                          <Clock className="h-3 w-3" /> Pending Visitor
+                          <Clock className="h-3 w-3" /> Pending
                         </span>
+                        <button
+                          onClick={() => handleApproveVisitor(user.id, "visitor")}
+                          disabled={updating === user.id}
+                          className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-blue-700 transition-all"
+                        >
+                          Approve Visitor
+                        </button>
                         <button
                           onClick={() => handleApproveVisitor(user.id, "member")}
                           disabled={updating === user.id}
                           className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-700 transition-all"
                         >
-                          Approve
+                          Approve Member
                         </button>
+                      </div>
+                    ) : user.role === "visitor" ? (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 uppercase tracking-tighter border border-blue-200 dark:border-blue-800">
+                          <Eye className="h-3 w-3" /> Visitor (Guest)
+                        </span>
+                        {(profile?.role === "admin" || profile?.role === "moderator") && (
+                          <button
+                            onClick={() => handleApproveVisitor(user.id, "member")}
+                            disabled={updating === user.id}
+                            className="rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white shadow-sm hover:bg-emerald-700 transition-all"
+                            title="Promote to Full Mess Member"
+                          >
+                            Make Member
+                          </button>
+                        )}
                       </div>
                     ) : profile?.role === "admin" ? (
                       <select
@@ -432,6 +467,7 @@ export default function UsersPage() {
                         disabled={updating === user.id}
                         className="rounded-xl border-gray-200 px-3 py-1.5 text-xs font-bold dark:bg-gray-700 dark:text-white focus:ring-indigo-500"
                       >
+                        <option value="pending">Pending</option>
                         <option value="visitor">Visitor</option>
                         <option value="member">Member</option>
                         <option value="moderator">Moderator</option>
