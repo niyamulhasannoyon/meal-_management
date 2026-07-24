@@ -250,7 +250,7 @@ export default function UsersPage() {
 
   // Segmented user categories for 100% calculation isolation
   const pendingUsers = users.filter(u => u.role === "pending");
-  const mealMembers = users.filter(u => u.role === "member" || u.role === "moderator" || u.role === "admin");
+  const mealMembers = users.filter(u => u.role === "member" || u.role === "moderator");
   const rentMembers = users.filter(u => u.isPermanent === true && u.role !== "pending");
   const visitorUsers = users.filter(u => u.role === "visitor");
 
