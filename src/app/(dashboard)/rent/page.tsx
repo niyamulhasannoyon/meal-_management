@@ -83,7 +83,7 @@ export default function RentPage() {
       const pUsers: UserProfile[] = [];
       usersSnap.forEach((doc) => {
         const data = doc.data();
-        if (data.isPermanent === true && data.role !== "visitor") {
+        if (data.isPermanent === true && data.role === "member") {
           pUsers.push({ id: doc.id, ...data } as UserProfile);
         }
       });

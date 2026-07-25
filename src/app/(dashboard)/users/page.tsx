@@ -250,8 +250,8 @@ export default function UsersPage() {
 
   // Segmented user categories for 100% calculation isolation
   const pendingUsers = users.filter(u => u.role === "pending");
-  const mealMembers = users.filter(u => u.role === "member" || u.role === "moderator");
-  const rentMembers = users.filter(u => u.isPermanent === true && u.role !== "pending");
+  const mealMembers = users.filter(u => u.role === "member");
+  const rentMembers = users.filter(u => u.isPermanent === true && u.role === "member");
   const visitorUsers = users.filter(u => u.role === "visitor");
 
   // Determine current list to display based on active tab
@@ -285,15 +285,6 @@ export default function UsersPage() {
             Isolated management for Daily Meal Members, Rent Members, and User Roles.
           </p>
         </div>
-        {profile?.role === "admin" && (
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-all hover:-translate-y-0.5"
-          >
-            <UserPlus className="h-4 w-4" />
-            {showAddForm ? "Close Form" : "Add New Member"}
-          </button>
-        )}
       </div>
 
       {/* PENDING APPROVALS NOTIFICATION BANNER */}
@@ -373,43 +364,6 @@ export default function UsersPage() {
               </motion.div>
             ))}
           </div>
-        </motion.div>
-      )}
-
-      {/* QUICK ADD FORM (ADMIN ONLY) */}
-      {showAddForm && profile?.role === "admin" && (
-        <motion.div 
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          className="overflow-hidden rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50"
-        >
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-indigo-600" /> Add Member or User Account
-          </h3>
-          <form onSubmit={handleAddMember} className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Full Name</label>
-              <input type="text" required value={newName} onChange={e => setNewName(e.target.value)} className="w-full rounded-xl border-gray-200 px-4 py-2.5 text-sm dark:bg-gray-700 dark:border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g. John Doe" />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Email (Optional)</label>
-              <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="w-full rounded-xl border-gray-200 px-4 py-2.5 text-sm dark:bg-gray-700 dark:border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" placeholder="john@example.com" />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Initial Role</label>
-              <select value={newRole} onChange={e => setNewRole(e.target.value as any)} className="w-full rounded-xl border-gray-200 px-4 py-2.5 text-sm font-bold dark:bg-gray-700 dark:border-gray-600 focus:ring-indigo-500">
-                <option value="member">Member (Daily Meal Member)</option>
-                <option value="visitor">Visitor (Read-only Guest)</option>
-                <option value="moderator">Moderator</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" disabled={updating === "new"} className="flex-1 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 disabled:opacity-50 h-[42px]">
-                {updating === "new" ? "Saving..." : "Create User"}
-              </button>
-            </div>
-          </form>
         </motion.div>
       )}
 
@@ -620,9 +574,6 @@ export default function UsersPage() {
                           <div className="flex gap-1">
                             {profile?.role === "admin" && (
                               <button onClick={() => { setEditingUser(user.id); setEditName(user.name); setEditEmail(user.email); }} className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-xl transition-colors" title="Edit Member"><Edit2 className="h-4 w-4" /></button>
-                            )}
-                            {profile?.id !== user.id && (
-                              <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Delete Member"><Trash2 className="h-4 w-4" /></button>
                             )}
                           </div>
                         )}

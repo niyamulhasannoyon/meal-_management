@@ -148,7 +148,7 @@ export default function Dashboard() {
         const uData = docSnap.data();
         if (uData.role === "pending") {
           pending++;
-        } else if (uData.role === "member" || uData.role === "moderator") {
+        } else if (uData.role === "member") {
           activeMembers.push(docSnap.id);
         }
       });
