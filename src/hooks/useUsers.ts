@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { onSnapshot, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { onSnapshot, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { usersCol, db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import type { UserProfile } from "@/lib/types/firestore";
+import type { UserProfile, UserRole } from "@/lib/types/firestore";
 import { logActivity } from "@/lib/activityLogger";
 import { sortUsers } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -12,6 +12,8 @@ export function useUsers() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+
+  const canManage = profile?.role === "super_admin" || profile?.role === "admin";
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -36,9 +38,9 @@ export function useUsers() {
 
   const handleApproveVisitor = async (
     userId: string,
-    targetRole: "member" | "admin" = "member"
+    targetRole: UserRole = "member"
   ) => {
-    if (profile?.role !== "admin") {
+    if (!canManage) {
       return toast.error("Only admins can approve users");
     }
     setUpdating(userId);
@@ -64,7 +66,11 @@ export function useUsers() {
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
-    if (profile?.role !== "admin") return toast.error("Only admins can change roles");
+    if (!canManage) return toast.error("Only admins can change roles");
+    if (newRole === "super_admin" && profile?.role !== "super_admin") {
+      return toast.error("Only Super Admin can assign Super Admin role");
+    }
+
     setUpdating(userId);
     try {
       const userToUpdate = users.find((u) => u.id === userId);
@@ -78,7 +84,7 @@ export function useUsers() {
         "system"
       );
 
-      toast.success(`Role updated to ${newRole}`);
+      toast.success(`Role updated to ${newRole.toUpperCase()}`);
     } catch (error) {
       console.error("Error updating role:", error);
       toast.error("Failed to update role");
@@ -87,8 +93,22 @@ export function useUsers() {
     }
   };
 
+  const handleTogglePermanent = async (userId: string, currentStatus: boolean) => {
+    if (!canManage) return toast.error("Only admins can change permanent status");
+    setUpdating(userId);
+    try {
+      await updateDoc(doc(db, "users", userId), { isPermanent: !currentStatus });
+      toast.success(`Permanent status set to ${!currentStatus}`);
+    } catch (error) {
+      console.error("Error updating permanent status:", error);
+      toast.error("Failed to update permanent status");
+    } finally {
+      setUpdating(null);
+    }
+  };
+
   const handleDeleteUser = async (userId: string) => {
-    if (profile?.role !== "admin") return;
+    if (!canManage) return;
     if (!confirm("Are you sure you want to delete this account?")) return;
 
     setUpdating(userId);
@@ -117,8 +137,10 @@ export function useUsers() {
     users,
     loading,
     updating,
+    canManage,
     handleApproveVisitor,
     handleRoleChange,
+    handleTogglePermanent,
     handleDeleteUser,
   };
 }

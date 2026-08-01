@@ -1,6 +1,6 @@
 import { Timestamp } from "firebase/firestore";
 
-export type UserRole = "admin" | "member" | "moderator" | "visitor" | "pending";
+export type UserRole = "super_admin" | "admin" | "moderator" | "member" | "visitor" | "pending";
 
 export interface UserProfile {
   id: string;
@@ -12,6 +12,7 @@ export interface UserProfile {
   bKashNumber?: string;
   nagadNumber?: string;
   isManager?: boolean;
+  isPermanent?: boolean;
   active?: boolean;
   createdAt?: Timestamp | Date | string;
 }

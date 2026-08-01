@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import {
   Calculator,
@@ -9,11 +9,20 @@ import {
   Search,
   ShoppingBag,
   Utensils,
-  Calendar,
+  Plus,
+  History,
+  Download,
+  Trash2,
+  Edit3,
+  CheckCircle,
 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { collection, getDocs, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useAuth, UserProfile } from "@/context/AuthContext";
 import { useMonthlyLedger } from "@/hooks/useMonthlyLedger";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getMonthStr } from "@/lib/utils";
+import { logActivity } from "@/lib/activityLogger";
+import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
@@ -33,12 +42,185 @@ import {
 import MemberProfilePanel from "@/components/profile/MemberProfilePanel";
 import { staggerContainer, fadeIn } from "@/lib/motion";
 
+interface PaymentItem {
+  id: string;
+  userId: string;
+  userName?: string;
+  amount: number;
+  paymentFor: string;
+  paymentMethod: string;
+  reference: string;
+  date: any;
+}
+
 export default function LedgerPage() {
-  const { profile } = useAuth();
+  const { profile, settings } = useAuth();
+  const currencySymbol = settings?.currencySymbol || "৳";
   const { month, setMonth, availableMonths, ledgerResult, loading, isClosed, closeMonth } = useMonthlyLedger();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+
+  // Add Deposit Modal State
+  const [showDepositModal, setShowDepositModal] = useState<string | null>(null);
+  const [depositUserId, setDepositUserId] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositMethod, setDepositMethod] = useState("Cash");
+  const [depositRef, setDepositRef] = useState("");
+  const [depositDate, setDepositDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [saving, setSaving] = useState(false);
+
+  // Payment Log Modal State
+  const [showPaymentsLog, setShowPaymentsLog] = useState(false);
+  const [paymentsList, setPaymentsList] = useState<PaymentItem[]>([]);
+  const [editingPayment, setEditingPayment] = useState<PaymentItem | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editMethod, setEditMethod] = useState("Cash");
+  const [editRef, setEditRef] = useState("");
+
+  useEffect(() => {
+    if (showPaymentsLog) {
+      fetchPaymentsList();
+    }
+  }, [showPaymentsLog, month]);
+
+  const fetchPaymentsList = async () => {
+    try {
+      const paySnap = await getDocs(collection(db, "payments"));
+      const usersSnap = await getDocs(collection(db, "users"));
+      const usersMap: Record<string, string> = {};
+      usersSnap.forEach((d) => {
+        usersMap[d.id] = d.data().name || "Member";
+      });
+
+      const list: PaymentItem[] = [];
+      paySnap.forEach((d) => {
+        const data = d.data();
+        const mStr = pMonth(data);
+        if (mStr === month) {
+          list.push({
+            id: d.id,
+            userId: data.userId,
+            userName: usersMap[data.userId] || data.userName || "Member",
+            amount: Number(data.amount || 0),
+            paymentFor: data.paymentFor || "meal",
+            paymentMethod: data.paymentMethod || "Cash",
+            reference: data.reference || "",
+            date: data.date,
+          });
+        }
+      });
+
+      list.sort((a, b) => safeDate(b.date).getTime() - safeDate(a.date).getTime());
+      setPaymentsList(list);
+    } catch (err) {
+      console.error("Error fetching payments log:", err);
+    }
+  };
+
+  const pMonth = (data: any) => {
+    return data.month || getMonthStr(data.date);
+  };
+
+  const safeDate = (val: any) => {
+    if (!val) return new Date();
+    if (typeof val === "object" && val.toDate) return val.toDate();
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const handleOpenAddDeposit = (userId?: string) => {
+    if (userId) {
+      setDepositUserId(userId);
+    } else if (ledgerResult?.users.length) {
+      setDepositUserId(ledgerResult.users[0].id);
+    }
+    setDepositAmount("");
+    setDepositMethod("Cash");
+    setDepositRef("");
+    setDepositDate(format(new Date(), "yyyy-MM-dd"));
+    setShowDepositModal("open");
+  };
+
+  const handleSaveDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(depositAmount);
+    if (!depositUserId || !amt || amt <= 0) return;
+
+    setSaving(true);
+    try {
+      const pDate = depositDate ? new Date(`${depositDate}T12:00:00`) : new Date();
+      await addDoc(collection(db, "payments"), {
+        userId: depositUserId,
+        amount: amt,
+        paymentFor: "meal",
+        paymentMethod: depositMethod,
+        reference: depositRef || "",
+        date: pDate,
+        month,
+        receivedBy: profile?.id,
+      });
+
+      const userToDeposit = ledgerResult?.users.find((u) => u.id === depositUserId);
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown User",
+        "ADDED_MEAL_DEPOSIT",
+        `Added meal deposit of ${currencySymbol}${amt} via ${depositMethod} for ${userToDeposit?.name || "Member"}`,
+        "payment"
+      );
+
+      toast.success("Deposit added successfully!");
+      setShowDepositModal(null);
+      window.location.reload();
+    } catch (error) {
+      console.error("Error adding deposit:", error);
+      toast.error("Failed to add deposit.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeletePayment = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this deposit entry?")) return;
+    try {
+      await deleteDoc(doc(db, "payments", id));
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown",
+        "DELETED_PAYMENT",
+        "Deleted deposit payment record",
+        "payment"
+      );
+      toast.success("Deposit deleted!");
+      fetchPaymentsList();
+    } catch (err) {
+      toast.error("Failed to delete deposit");
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!ledgerResult) return;
+    const headers = ["Member", "Total Meals", "Fine Meals", "Meal Cost (TK)", "Deposits (TK)", "Net Balance (TK)", "Status"];
+    const rows = ledgerResult.users.map((u) => [
+      `"${u.name}"`,
+      u.totalMeals,
+      u.fineMeals,
+      Math.round(u.mealCost),
+      Math.round(u.deposits),
+      Math.round(u.balance),
+      u.balance < 0 ? "Due" : u.balance > 0 ? "Extra" : "Settled",
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `mess_ledger_${month}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const filteredMembers =
     ledgerResult?.users.filter((u) => u.name.toLowerCase().includes(searchQuery.toLowerCase())) || [];
@@ -63,7 +245,7 @@ export default function LedgerPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Quick Month Dropdown */}
+          {/* Month Selector */}
           <Select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
@@ -81,13 +263,18 @@ export default function LedgerPage() {
             )}
           </Select>
 
-          {/* Month Picker */}
-          <Input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="w-40 text-xs font-semibold"
-          />
+          {/* Actions */}
+          <Button variant="outline" size="sm" onClick={() => handleOpenAddDeposit()}>
+            <Plus className="w-4 h-4 mr-1 text-emerald-600" /> Deposit Money
+          </Button>
+
+          <Button variant="outline" size="sm" onClick={() => setShowPaymentsLog(true)}>
+            <History className="w-4 h-4 mr-1 text-brand" /> Payments Log
+          </Button>
+
+          <Button variant="outline" size="sm" onClick={handleExportCSV}>
+            <Download className="w-4 h-4 mr-1" /> Export CSV
+          </Button>
 
           {profile?.role === "admin" && (
             <Button
@@ -163,7 +350,7 @@ export default function LedgerPage() {
                 <TableHead className="text-right">Meal Cost</TableHead>
                 <TableHead className="text-right">Total Deposits</TableHead>
                 <TableHead className="text-right">Net Balance</TableHead>
-                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -185,12 +372,11 @@ export default function LedgerPage() {
                   const isExtra = member.balance > 0;
 
                   return (
-                    <TableRow
-                      key={member.id}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedUserId(member.id)}
-                    >
-                      <TableCell className="font-semibold text-zinc-900 dark:text-zinc-100">
+                    <TableRow key={member.id}>
+                      <TableCell
+                        className="font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer"
+                        onClick={() => setSelectedUserId(member.id)}
+                      >
                         {member.name}
                       </TableCell>
                       <TableCell className="text-center font-bold text-zinc-700 dark:text-zinc-300">
@@ -215,13 +401,13 @@ export default function LedgerPage() {
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
-                        {isDue ? (
-                          <Badge variant="danger">Due</Badge>
-                        ) : isExtra ? (
-                          <Badge variant="success">Extra</Badge>
-                        ) : (
-                          <Badge variant="default">Settled</Badge>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenAddDeposit(member.id)}
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Deposit
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -234,6 +420,115 @@ export default function LedgerPage() {
 
       {/* Member Profile Drawer */}
       <MemberProfilePanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+
+      {/* Deposit Modal */}
+      <Dialog
+        isOpen={!!showDepositModal}
+        onClose={() => setShowDepositModal(null)}
+        title="Add Cash / Bank Deposit"
+        description="Record a cash deposit or digital transfer for a member."
+      >
+        <form onSubmit={handleSaveDeposit} className="space-y-4 pt-2">
+          <Select
+            label="Member"
+            value={depositUserId}
+            onChange={(e) => setDepositUserId(e.target.value)}
+            required
+          >
+            <option value="" disabled>Select Member</option>
+            {ledgerResult?.users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </Select>
+
+          <Input
+            label={`Deposit Amount (${currencySymbol})`}
+            type="number"
+            placeholder="e.g. 1000"
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
+            required
+          />
+
+          <Select
+            label="Payment Method"
+            value={depositMethod}
+            onChange={(e) => setDepositMethod(e.target.value)}
+          >
+            <option value="Cash">Cash</option>
+            <option value="bKash">bKash</option>
+            <option value="Nagad">Nagad</option>
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Other">Other</option>
+          </Select>
+
+          <Input
+            label="Reference / TrxID (Optional)"
+            type="text"
+            placeholder="e.g. TrxID 9A8B7C"
+            value={depositRef}
+            onChange={(e) => setDepositRef(e.target.value)}
+          />
+
+          <Input
+            label="Deposit Date"
+            type="date"
+            value={depositDate}
+            onChange={(e) => setDepositDate(e.target.value)}
+            required
+          />
+
+          <div className="flex justify-end space-x-3 pt-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowDepositModal(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" isLoading={saving}>
+              Save Deposit
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* Payments Log Modal */}
+      <Dialog
+        isOpen={showPaymentsLog}
+        onClose={() => setShowPaymentsLog(false)}
+        title={`Deposit Transactions Log (${month})`}
+        description="Audited record of all deposit entries submitted for this month."
+        maxWidth="lg"
+      >
+        <div className="space-y-4 pt-2 max-h-96 overflow-y-auto">
+          {paymentsList.length === 0 ? (
+            <p className="text-xs text-zinc-400 italic text-center py-6">No deposit transactions logged for this month.</p>
+          ) : (
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {paymentsList.map((p) => (
+                <div key={p.id} className="py-2.5 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-zinc-900 dark:text-zinc-100">{p.userName}</span>
+                    <span className="block text-[10px] text-zinc-400">
+                      {format(safeDate(p.date), "MMM dd, yyyy")} — {p.paymentMethod} {p.reference ? `(${p.reference})` : ""}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <span className="font-extrabold text-emerald-600 dark:text-emerald-400">৳{formatCurrency(p.amount)}</span>
+                    {profile?.role === "admin" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-600 p-1 h-auto"
+                        onClick={() => handleDeletePayment(p.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Dialog>
 
       {/* Close Month Modal */}
       <Dialog

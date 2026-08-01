@@ -34,8 +34,8 @@ export function useMonthlyLedger(targetMonth?: string) {
 
       usersSnap.forEach((d) => {
         const u = d.data();
-        // Include members, admins, moderators, and permanent members
-        if (u.role === "member" || u.role === "admin" || u.role === "moderator" || u.isPermanent) {
+        // ONLY users with role === 'member' are included in meal calculations
+        if (u.role === "member") {
           usersList.push({ id: d.id, name: u.name || "Member" });
           activeMemberIds.push(d.id);
         }

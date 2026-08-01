@@ -2,14 +2,15 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, getDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { UserRole } from "@/lib/types/firestore";
 
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "moderator" | "member" | "visitor" | "pending";
+  role: UserRole;
   isPermanent: boolean;
   currentBalance: number;
 }
@@ -86,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      
+
       if (profileUnsub) {
         profileUnsub();
         profileUnsub = null;
@@ -94,33 +95,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (currentUser) {
         const docRef = doc(db, "users", currentUser.uid);
-        profileUnsub = onSnapshot(docRef, async (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            const adminEmails = ["niyamulhasanbd@gmail.com", "niyamulhasan1089@gmail.com"];
-            
-            // Promote to admin if email matches
-            if (adminEmails.includes(currentUser.email || "") && data.role !== "admin") {
-              await updateDoc(docRef, { role: "admin" });
-              data.role = "admin";
-            }
+        profileUnsub = onSnapshot(
+          docRef,
+          async (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              let assignedRole: UserRole = (data.role as UserRole) || "visitor";
 
-            setProfile({
-              id: currentUser.uid,
-              name: data.name || currentUser.displayName || "Unknown",
-              email: data.email || currentUser.email || "",
-              role: data.role || "visitor",
-              isPermanent: data.isPermanent || false,
-              currentBalance: data.currentBalance || 0,
-            } as UserProfile);
-          } else {
-            setProfile(null);
+              // Promote niyamulhasanbd@gmail.com to super_admin
+              if (currentUser.email === "niyamulhasanbd@gmail.com") {
+                if (data.role !== "super_admin") {
+                  await updateDoc(docRef, { role: "super_admin" });
+                }
+                assignedRole = "super_admin";
+              } else if (currentUser.email === "niyamulhasan1089@gmail.com") {
+                if (data.role !== "admin" && data.role !== "super_admin") {
+                  await updateDoc(docRef, { role: "admin" });
+                }
+                assignedRole = data.role === "super_admin" ? "super_admin" : "admin";
+              }
+
+              setProfile({
+                id: currentUser.uid,
+                name: data.name || currentUser.displayName || "Unknown",
+                email: data.email || currentUser.email || "",
+                role: assignedRole,
+                isPermanent: data.isPermanent || false,
+                currentBalance: data.currentBalance || 0,
+              });
+            } else {
+              setProfile(null);
+            }
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Error listening to user profile:", error);
+            setLoading(false);
           }
-          setLoading(false);
-        }, (error) => {
-          console.error("Error listening to user profile:", error);
-          setLoading(false);
-        });
+        );
       } else {
         setProfile(null);
         setLoading(false);
