@@ -6,13 +6,10 @@ import {
   Calculator,
   Lock,
   Unlock,
-  Download,
   Search,
-  PlusCircle,
-  TrendingUp,
-  CreditCard,
-  Utensils,
   ShoppingBag,
+  Utensils,
+  Calendar,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useMonthlyLedger } from "@/hooks/useMonthlyLedger";
@@ -21,6 +18,7 @@ import { motion } from "framer-motion";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import {
@@ -37,14 +35,13 @@ import { staggerContainer, fadeIn } from "@/lib/motion";
 
 export default function LedgerPage() {
   const { profile } = useAuth();
-  const { month, setMonth, ledgerResult, loading, isClosed, closeMonth } = useMonthlyLedger();
+  const { month, setMonth, availableMonths, ledgerResult, loading, isClosed, closeMonth } = useMonthlyLedger();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
 
-  const filteredMembers = ledgerResult?.users.filter((u) =>
-    u.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || [];
+  const filteredMembers =
+    ledgerResult?.users.filter((u) => u.name.toLowerCase().includes(searchQuery.toLowerCase())) || [];
 
   return (
     <motion.main
@@ -66,6 +63,25 @@ export default function LedgerPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* Quick Month Dropdown */}
+          <Select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="w-40 text-xs font-bold"
+          >
+            {availableMonths.map((m) => (
+              <option key={m} value={m}>
+                {format(new Date(`${m}-01`), "MMMM yyyy")}
+              </option>
+            ))}
+            {!availableMonths.includes(month) && (
+              <option value={month}>
+                {format(new Date(`${month}-01`), "MMMM yyyy")}
+              </option>
+            )}
+          </Select>
+
+          {/* Month Picker */}
           <Input
             type="month"
             value={month}
@@ -129,8 +145,9 @@ export default function LedgerPage() {
             leftIcon={<Search className="w-4 h-4" />}
           />
         </div>
-        <div className="text-xs text-zinc-500 font-medium">
-          Showing {filteredMembers.length} member(s)
+        <div className="flex items-center space-x-2 text-xs text-zinc-500 font-medium">
+          {isClosed && <Badge variant="warning">Frozen Ledger</Badge>}
+          <span>Showing {filteredMembers.length} member(s) for {format(new Date(`${month}-01`), "MMMM yyyy")}</span>
         </div>
       </motion.div>
 
@@ -159,7 +176,7 @@ export default function LedgerPage() {
               ) : filteredMembers.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-zinc-400">
-                    No members match search.
+                    No members match search for {month}.
                   </TableCell>
                 </TableRow>
               ) : (
