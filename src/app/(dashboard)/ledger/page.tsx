@@ -50,6 +50,7 @@ export default function LedgerPage() {
   const [totalBazar, setTotalBazar] = useState(0);
   const [totalDeposits, setTotalDeposits] = useState(0);
   const [isClosed, setIsClosed] = useState(false);
+  const [hasManualEdits, setHasManualEdits] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,6 +64,7 @@ export default function LedgerPage() {
   const [showDepositModal, setShowDepositModal] = useState<string | null>(null);
   const [depositMethod, setDepositMethod] = useState("Cash");
   const [depositRef, setDepositRef] = useState("");
+  const [depositDate, setDepositDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -138,30 +140,6 @@ export default function LedgerPage() {
   const fetchLedger = async () => {
     setLoading(true);
     try {
-      const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", currentMonth));
-
-      if (ledgerDoc.exists()) {
-        const data = ledgerDoc.data();
-        if (data.isClosed) {
-          // Month is closed, load frozen data
-          setIsClosed(true);
-          setMealRate(data.mealRate);
-          setTotalMessMeals(data.totalMeals);
-          setTotalBazar(data.totalBazar);
-          setTotalDeposits(data.totalDeposits || (data.users || []).reduce((sum: number, u: any) => sum + (u.deposits || 0), 0));
-          setLedgerUsers(data.users || []);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 2. Real-time Calculation if not closed
-      setIsClosed(false);
-
-      // Fetch system start date
-      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
-      const systemStartDate = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
-
       // Fetch all users
       const usersSnap = await getDocs(collection(db, "users"));
       const allUsers: UserProfile[] = [];
@@ -171,6 +149,55 @@ export default function LedgerPage() {
           allUsers.push({ id: d.id, ...data } as UserProfile);
         }
       });
+
+      const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", currentMonth));
+
+      if (ledgerDoc.exists()) {
+        const data = ledgerDoc.data();
+        if (data.isClosed || data.hasManualEdits) {
+          // Month is closed or manually edited, load saved data
+          setIsClosed(!!data.isClosed);
+          setHasManualEdits(!!data.hasManualEdits);
+          setMealRate(data.mealRate ?? 0);
+          setTotalMessMeals(data.totalMeals ?? 0);
+          setTotalBazar(data.totalBazar ?? 0);
+
+          const savedUsersMap: Record<string, LedgerUser> = {};
+          (data.users || []).forEach((u: LedgerUser) => {
+            savedUsersMap[u.id] = u;
+          });
+
+          // Ensure all active members are included
+          const mergedUsers: LedgerUser[] = sortUsers(allUsers).map(u => {
+            if (savedUsersMap[u.id]) {
+              return savedUsersMap[u.id];
+            }
+            return {
+              id: u.id,
+              name: u.name,
+              totalMeals: 0,
+              fineMeals: 0,
+              mealCost: 0,
+              deposits: 0,
+              balance: 0,
+              isSettled: false
+            };
+          });
+
+          setLedgerUsers(mergedUsers);
+          setTotalDeposits(data.totalDeposits || mergedUsers.reduce((sum, u) => sum + u.deposits, 0));
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Real-time Calculation if not closed or manually edited
+      setIsClosed(false);
+      setHasManualEdits(false);
+
+      // Fetch system start date
+      const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
+      const systemStartDate = settingsDoc.exists() ? (settingsDoc.data().systemStartDate || "") : "";
 
       // Fetch all meals
       const mealsSnap = await getDocs(collection(db, "meals"));
@@ -234,13 +261,6 @@ export default function LedgerPage() {
 
       const rate = tMeals > 0 ? tBazar / tMeals : 0;
 
-      // Check for manual overrides from the database
-      const existingData = ledgerDoc.exists() ? ledgerDoc.data() : null;
-      const manualUsersMap: Record<string, any> = {};
-      if (existingData?.users) {
-        existingData.users.forEach((u: any) => manualUsersMap[u.id] = u);
-      }
-
       const calculatedUsers: LedgerUser[] = sortUsers(allUsers).map(u => {
         const uRegularMeals = userMealsCount[u.id] || 0;
         const uFines = userFinesCount[u.id] || 0;
@@ -251,25 +271,15 @@ export default function LedgerPage() {
         const uBazarDep = bazarDeposits[u.id] || 0;
         const totalDep = uDirectDep + uBazarDep;
 
-        // If the month is NOT closed, we ALWAYS use the real-time calculated totalDep.
-        // This ensures that adding money in meals/payments immediately reflects here.
-        // If the month IS closed, we use the frozen value from the ledger document.
-        const manualUser = manualUsersMap[u.id];
-        const finalDeposits = isClosed ? (manualUser?.deposits ?? totalDep) : totalDep;
-
-        // Use manual cost/meals ONLY if closed or if specifically overridden in the state (handled during editing)
-        const finalCost = isClosed ? (manualUser?.mealCost ?? uCost) : uCost;
-        const finalTotalMeals = isClosed ? (manualUser?.totalMeals ?? uTotalMeals) : uTotalMeals;
-
         return {
           id: u.id,
           name: u.name,
-          totalMeals: finalTotalMeals,
+          totalMeals: uTotalMeals,
           fineMeals: uFines,
-          mealCost: finalCost,
-          deposits: finalDeposits,
-          balance: finalDeposits - finalCost,
-          isSettled: manualUser?.isSettled || false
+          mealCost: uCost,
+          deposits: totalDep,
+          balance: totalDep - uCost,
+          isSettled: false
         };
       });
 
@@ -322,13 +332,14 @@ export default function LedgerPage() {
     if (!depositAmount || Number(depositAmount) <= 0) return;
     setSaving(true);
     try {
+      const pDate = depositDate ? new Date(`${depositDate}T12:00:00`) : new Date();
       await addDoc(collection(db, "payments"), {
         userId,
         amount: Number(depositAmount),
         paymentFor: "meal",
         paymentMethod: depositMethod,
         reference: depositRef || "",
-        date: new Date(), // using current date for deposit
+        date: pDate,
         receivedBy: profile?.id
       });
 
@@ -351,6 +362,39 @@ export default function LedgerPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const recalculateLedgerState = (
+    usersList: LedgerUser[],
+    bazarVal: number,
+    changedField?: keyof LedgerUser | "totalBazar"
+  ) => {
+    const newTotalMessMeals = usersList.reduce((sum, u) => sum + Number(u.totalMeals || 0), 0);
+    const newMealRate = newTotalMessMeals > 0 ? bazarVal / newTotalMessMeals : 0;
+
+    const updatedUsers = usersList.map(u => {
+      let cost = u.mealCost;
+      if (changedField === "totalMeals" || changedField === "fineMeals" || changedField === "totalBazar") {
+        cost = Number(u.totalMeals || 0) * newMealRate;
+      }
+      const dep = Number(u.deposits || 0);
+      return {
+        ...u,
+        totalMeals: Number(u.totalMeals || 0),
+        fineMeals: Number(u.fineMeals || 0),
+        mealCost: cost,
+        deposits: dep,
+        balance: dep - cost
+      };
+    });
+
+    const newTotalDeposits = updatedUsers.reduce((sum, u) => sum + u.deposits, 0);
+
+    setTotalMessMeals(newTotalMessMeals);
+    setMealRate(newMealRate);
+    setTotalBazar(bazarVal);
+    setTotalDeposits(newTotalDeposits);
+    setLedgerUsers(updatedUsers);
   };
 
   const handleSettleDue = async (userId: string) => {
@@ -437,7 +481,8 @@ export default function LedgerPage() {
     setSaving(true);
     try {
       await setDoc(doc(db, "monthly_ledgers", currentMonth), {
-        isClosed: isClosed, // Preserve closed status
+        isClosed: isClosed,
+        hasManualEdits: true,
         mealRate,
         totalMeals: totalMessMeals,
         totalBazar,
@@ -445,6 +490,7 @@ export default function LedgerPage() {
         users: ledgerUsers,
         updatedAt: new Date()
       }, { merge: true });
+      setHasManualEdits(true);
       setIsEditingLedger(false);
       toast.success("Manual edits saved successfully!");
     } catch (error) {
@@ -455,15 +501,37 @@ export default function LedgerPage() {
     }
   };
 
+  const handleResetManualEdits = async () => {
+    if (!confirm("Are you sure you want to reset manual edits and recalculate from raw meal and bazar data?")) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "monthly_ledgers", currentMonth), {
+        hasManualEdits: false
+      });
+      setHasManualEdits(false);
+      setIsEditingLedger(false);
+      await fetchLedger();
+      toast.success("Reset to real-time calculation!");
+    } catch (error) {
+      console.error("Error resetting manual edits:", error);
+      toast.error("Failed to reset manual edits.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleLedgerUserChange = (id: string, field: keyof LedgerUser, value: number) => {
-    setLedgerUsers(prev => prev.map(u => {
+    const updatedUsersList = ledgerUsers.map(u => {
       if (u.id === id) {
-        const updated = { ...u, [field]: value };
-        updated.balance = updated.deposits - updated.mealCost;
-        return updated;
+        return { ...u, [field]: value };
       }
       return u;
-    }));
+    });
+    recalculateLedgerState(updatedUsersList, totalBazar, field);
+  };
+
+  const handleTotalBazarChange = (value: number) => {
+    recalculateLedgerState(ledgerUsers, value, "totalBazar");
   };
 
   if (loading) {
@@ -525,16 +593,28 @@ export default function LedgerPage() {
             </button>
           )}
           {profile?.role === "admin" && (
-            <button
-              onClick={() => {
-                if (isEditingLedger) handleSaveManualEdits();
-                else setIsEditingLedger(true);
-              }}
-              disabled={saving}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 disabled:opacity-50 transition-all hover:-translate-y-0.5"
-            >
-              {isEditingLedger ? "Save Edits" : "Edit Ledger"}
-            </button>
+            <>
+              {hasManualEdits && !isClosed && (
+                <button
+                  onClick={handleResetManualEdits}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-sm font-semibold transition-all shadow-sm"
+                  title="Reset manual edits and recalculate from raw data"
+                >
+                  Recalculate Raw
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  if (isEditingLedger) handleSaveManualEdits();
+                  else setIsEditingLedger(true);
+                }}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 disabled:opacity-50 transition-all hover:-translate-y-0.5"
+              >
+                {isEditingLedger ? "Save Edits" : "Edit Ledger"}
+              </button>
+            </>
           )}
           {isClosed && (
             <span className="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800">
@@ -557,7 +637,21 @@ export default function LedgerPage() {
         </motion.div>
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-white px-4 py-5 shadow-sm sm:p-6 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50">
           <dt className="truncate text-sm font-medium text-gray-500 dark:text-gray-400">Total Bazar Cost</dt>
-          <dd className="mt-1 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{currencySymbol} {formatCurrency(totalBazar)}</dd>
+          <dd className="mt-1 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+            {isEditingLedger ? (
+              <div className="flex items-center gap-1">
+                <span className="text-xl">{currencySymbol}</span>
+                <input
+                  type="number"
+                  value={totalBazar}
+                  onChange={e => handleTotalBazarChange(Number(e.target.value))}
+                  className="w-36 rounded-xl border-gray-200 px-2 py-1 text-2xl font-bold dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            ) : (
+              <>{currencySymbol} {formatCurrency(totalBazar)}</>
+            )}
+          </dd>
         </motion.div>
         <motion.div variants={item} className="overflow-hidden rounded-2xl bg-indigo-600 px-4 py-5 shadow-lg shadow-indigo-200 dark:shadow-none sm:p-6">
           <dt className="truncate text-sm font-medium text-indigo-100">Final Meal Rate</dt>
@@ -647,7 +741,14 @@ export default function LedgerPage() {
                     {/* Actions if NOT closed */}
                     {profile?.role === "admin" && !isClosed && (
                       <button
-                        onClick={() => { setShowDepositModal(u.id); setDepositAmount(""); setDepositMethod("Cash"); setDepositRef(""); }}
+                        onClick={() => {
+                          setShowDepositModal(u.id);
+                          setDepositAmount("");
+                          setDepositMethod("Cash");
+                          setDepositRef("");
+                          const todayStr = format(new Date(), "yyyy-MM");
+                          setDepositDate(currentMonth === todayStr ? format(new Date(), "yyyy-MM-dd") : `${currentMonth}-01`);
+                        }}
                         className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1 justify-end w-full group"
                       >
                         <PlusCircle className="h-4 w-4 group-hover:scale-110 transition-transform" /> <span className="hidden sm:inline">Add Deposit</span>
@@ -702,6 +803,16 @@ export default function LedgerPage() {
                   value={depositAmount}
                   onChange={e => setDepositAmount(e.target.value)}
                   placeholder="e.g. 1000"
+                  className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Deposit Date</label>
+                <input
+                  type="date"
+                  value={depositDate}
+                  onChange={e => setDepositDate(e.target.value)}
                   className="w-full rounded-xl border-gray-200 py-2.5 px-4 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   required
                 />

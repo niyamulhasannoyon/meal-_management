@@ -268,8 +268,9 @@ export default function MealsPage() {
     setSaving(true);
     try {
       const spender = users.find(u => u.id === bazarSpenderId);
+      const entryDate = selectedDate ? new Date(`${selectedDate}T12:00:00`) : new Date();
       await addDoc(collection(db, "bazar_costs"), {
-        date: new Date(),
+        date: entryDate,
         amount: Number(bazarAmount),
         description: bazarDesc,
         addedBy: profile?.id,
