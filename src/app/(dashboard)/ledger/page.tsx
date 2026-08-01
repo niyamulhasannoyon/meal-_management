@@ -7,7 +7,7 @@ import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format } from "date-fns";
 import { Calculator, Lock, Unlock, FileText, PlusCircle, Search, Download, Printer, History, Edit3, Trash2, ExternalLink } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
-import { sortUsers, formatCurrency } from "@/lib/utils";
+import { sortUsers, formatCurrency, getMonthStr, getDateStr } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
 import MemberProfilePanel from "@/components/profile/MemberProfilePanel";
 import toast from "react-hot-toast";
@@ -151,49 +151,47 @@ export default function LedgerPage() {
       });
 
       const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", currentMonth));
+      const existingData = ledgerDoc.exists() ? ledgerDoc.data() : null;
 
-      if (ledgerDoc.exists()) {
-        const data = ledgerDoc.data();
-        if (data.isClosed || data.hasManualEdits) {
-          // Month is closed or manually edited, load saved data
-          setIsClosed(!!data.isClosed);
-          setHasManualEdits(!!data.hasManualEdits);
-          setMealRate(data.mealRate ?? 0);
-          setTotalMessMeals(data.totalMeals ?? 0);
-          setTotalBazar(data.totalBazar ?? 0);
+      if (existingData?.isClosed) {
+        // Month is closed (locked/frozen), load saved frozen data
+        setIsClosed(true);
+        setHasManualEdits(!!existingData.hasManualEdits);
+        setMealRate(existingData.mealRate ?? 0);
+        setTotalMessMeals(existingData.totalMeals ?? 0);
+        setTotalBazar(existingData.totalBazar ?? 0);
 
-          const savedUsersMap: Record<string, LedgerUser> = {};
-          (data.users || []).forEach((u: LedgerUser) => {
-            savedUsersMap[u.id] = u;
-          });
+        const savedUsersMap: Record<string, LedgerUser> = {};
+        (existingData.users || []).forEach((u: LedgerUser) => {
+          savedUsersMap[u.id] = u;
+        });
 
-          // Ensure all active members are included
-          const mergedUsers: LedgerUser[] = sortUsers(allUsers).map(u => {
-            if (savedUsersMap[u.id]) {
-              return savedUsersMap[u.id];
-            }
-            return {
-              id: u.id,
-              name: u.name,
-              totalMeals: 0,
-              fineMeals: 0,
-              mealCost: 0,
-              deposits: 0,
-              balance: 0,
-              isSettled: false
-            };
-          });
+        // Ensure all active members are included
+        const mergedUsers: LedgerUser[] = sortUsers(allUsers).map(u => {
+          if (savedUsersMap[u.id]) {
+            return savedUsersMap[u.id];
+          }
+          return {
+            id: u.id,
+            name: u.name,
+            totalMeals: 0,
+            fineMeals: 0,
+            mealCost: 0,
+            deposits: 0,
+            balance: 0,
+            isSettled: false
+          };
+        });
 
-          setLedgerUsers(mergedUsers);
-          setTotalDeposits(data.totalDeposits || mergedUsers.reduce((sum, u) => sum + u.deposits, 0));
-          setLoading(false);
-          return;
-        }
+        setLedgerUsers(mergedUsers);
+        setTotalDeposits(existingData.totalDeposits || mergedUsers.reduce((sum, u) => sum + u.deposits, 0));
+        setLoading(false);
+        return;
       }
 
-      // Real-time Calculation if not closed or manually edited
+      // Real-time Calculation for Open Months
       setIsClosed(false);
-      setHasManualEdits(false);
+      setHasManualEdits(!!existingData?.hasManualEdits);
 
       // Fetch system start date
       const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
@@ -207,8 +205,9 @@ export default function LedgerPage() {
 
       mealsSnap.forEach(d => {
         const data = d.data();
-        const dateStr = data.date || "";
-        if (dateStr && dateStr.startsWith(currentMonth) && (!systemStartDate || dateStr >= systemStartDate)) {
+        const dStr = data.date || "";
+        const mStr = getMonthStr(dStr);
+        if (mStr === currentMonth && (!systemStartDate || dStr >= systemStartDate)) {
           if (activeMemberIds.includes(data.userId)) {
             const meals = Number(data.totalMeals || 0);
             tMeals += meals;
@@ -223,12 +222,13 @@ export default function LedgerPage() {
       const bazarDeposits: Record<string, number> = {};
       bazarSnap.forEach(d => {
         const data = d.data();
-        const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
-        const dateStr = format(dateObj, "yyyy-MM-dd");
-        if (format(dateObj, "yyyy-MM") === currentMonth && (!systemStartDate || dateStr >= systemStartDate)) {
-          tBazar += Number(data.amount || 0);
+        const mStr = getMonthStr(data.date);
+        const dStr = getDateStr(data.date);
+        if (mStr === currentMonth && (!systemStartDate || dStr >= systemStartDate)) {
+          const amt = Number(data.amount || 0);
+          tBazar += amt;
           if (data.spenderId) {
-            bazarDeposits[data.spenderId] = (bazarDeposits[data.spenderId] || 0) + Number(data.amount || 0);
+            bazarDeposits[data.spenderId] = (bazarDeposits[data.spenderId] || 0) + amt;
           }
         }
       });
@@ -238,10 +238,11 @@ export default function LedgerPage() {
       const userDeposits: Record<string, number> = {};
       paySnap.forEach(d => {
         const data = d.data();
-        const dateObj = data.date?.toDate ? data.date.toDate() : new Date(data.date);
-        const dateStr = format(dateObj, "yyyy-MM-dd");
-        if (format(dateObj, "yyyy-MM") === currentMonth && data.paymentFor === "meal" && (!systemStartDate || dateStr >= systemStartDate)) {
-          userDeposits[data.userId] = (userDeposits[data.userId] || 0) + Number(data.amount || 0);
+        const mStr = getMonthStr(data.date);
+        const dStr = getDateStr(data.date);
+        if (mStr === currentMonth && data.paymentFor === "meal" && (!systemStartDate || dStr >= systemStartDate)) {
+          const amt = Number(data.amount || 0);
+          userDeposits[data.userId] = (userDeposits[data.userId] || 0) + amt;
         }
       });
 
@@ -250,26 +251,48 @@ export default function LedgerPage() {
       const userFinesCount: Record<string, number> = {};
       finesSnap.forEach(d => {
         const data = d.data();
-        const dateObj = data.date?.toDate ? data.date.toDate() : (data.date ? new Date(data.date) : new Date());
-        const dateStr = format(dateObj, "yyyy-MM-dd");
-        if (format(dateObj, "yyyy-MM") === currentMonth && (!systemStartDate || dateStr >= systemStartDate)) {
+        const mStr = getMonthStr(data.date);
+        const dStr = getDateStr(data.date);
+        if (mStr === currentMonth && (!systemStartDate || dStr >= systemStartDate)) {
           const fineAmount = Number(data.amount || 0);
           userFinesCount[data.userId] = (userFinesCount[data.userId] || 0) + fineAmount;
-          tMeals += fineAmount; // Add fines to total mess meals for accurate meal rate
         }
       });
 
-      const rate = tMeals > 0 ? tBazar / tMeals : 0;
+      // Check for manual user meal overrides if previously edited
+      const manualUsersMap: Record<string, any> = {};
+      if (existingData?.users) {
+        existingData.users.forEach((u: any) => manualUsersMap[u.id] = u);
+      }
 
-      const calculatedUsers: LedgerUser[] = sortUsers(allUsers).map(u => {
+      let totalMessMealsCalculated = 0;
+      const userMealsMap: Record<string, { totalMeals: number; fineMeals: number }> = {};
+
+      sortUsers(allUsers).forEach(u => {
         const uRegularMeals = userMealsCount[u.id] || 0;
         const uFines = userFinesCount[u.id] || 0;
-        const uTotalMeals = uRegularMeals + uFines;
+        const manualUser = manualUsersMap[u.id];
+        // If manual edits exist for meals, use manual override, otherwise regular + fines
+        const uTotalMeals = (existingData?.hasManualEdits && manualUser?.totalMeals !== undefined) 
+          ? manualUser.totalMeals 
+          : (uRegularMeals + uFines);
+        userMealsMap[u.id] = { totalMeals: uTotalMeals, fineMeals: uFines };
+        totalMessMealsCalculated += uTotalMeals;
+      });
+
+      const rate = totalMessMealsCalculated > 0 ? tBazar / totalMessMealsCalculated : 0;
+
+      const calculatedUsers: LedgerUser[] = sortUsers(allUsers).map(u => {
+        const uMealsData = userMealsMap[u.id];
+        const uTotalMeals = uMealsData.totalMeals;
+        const uFines = uMealsData.fineMeals;
 
         const uCost = uTotalMeals * rate;
         const uDirectDep = userDeposits[u.id] || 0;
         const uBazarDep = bazarDeposits[u.id] || 0;
         const totalDep = uDirectDep + uBazarDep;
+
+        const manualUser = manualUsersMap[u.id];
 
         return {
           id: u.id,
@@ -279,11 +302,11 @@ export default function LedgerPage() {
           mealCost: uCost,
           deposits: totalDep,
           balance: totalDep - uCost,
-          isSettled: false
+          isSettled: manualUser?.isSettled || false
         };
       });
 
-      setTotalMessMeals(tMeals);
+      setTotalMessMeals(totalMessMealsCalculated);
       setTotalBazar(tBazar);
       setMealRate(rate);
       setLedgerUsers(calculatedUsers);
@@ -293,8 +316,7 @@ export default function LedgerPage() {
       console.error("Error fetching ledger:", error);
     } finally {
       setLoading(false);
-    }
-  };
+    }  };
 
   const handleCloseMonth = async () => {
     if (profile?.role === "member") return;

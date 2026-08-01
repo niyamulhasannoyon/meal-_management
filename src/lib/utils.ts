@@ -1,3 +1,5 @@
+import { format } from "date-fns";
+
 export const sortUsers = <T extends { name: string }>(usersArray: T[]): T[] => {
   const userOrder = ["Niloy", "Abir Hossian", "Niyamul Hasan", "Mouno", "Siyam", "Farhan"];
   return [...usersArray].sort((a, b) => {
@@ -21,3 +23,38 @@ export const formatCurrency = (value: number | string): string => {
   }).format(num);
 };
 
+export const getMonthStr = (dateVal: any): string => {
+  if (!dateVal) return "";
+  if (typeof dateVal === "string") {
+    return dateVal.length >= 7 ? dateVal.substring(0, 7) : dateVal;
+  }
+  if (dateVal?.toDate) {
+    return format(dateVal.toDate(), "yyyy-MM");
+  }
+  if (dateVal instanceof Date) {
+    return format(dateVal, "yyyy-MM");
+  }
+  try {
+    return format(new Date(dateVal), "yyyy-MM");
+  } catch {
+    return "";
+  }
+};
+
+export const getDateStr = (dateVal: any): string => {
+  if (!dateVal) return "";
+  if (typeof dateVal === "string") {
+    return dateVal.length >= 10 ? dateVal.substring(0, 10) : dateVal;
+  }
+  if (dateVal?.toDate) {
+    return format(dateVal.toDate(), "yyyy-MM-dd");
+  }
+  if (dateVal instanceof Date) {
+    return format(dateVal, "yyyy-MM-dd");
+  }
+  try {
+    return format(new Date(dateVal), "yyyy-MM-dd");
+  } catch {
+    return "";
+  }
+};
