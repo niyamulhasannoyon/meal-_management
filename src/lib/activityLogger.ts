@@ -1,21 +1,25 @@
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "./firebase";
+import { addDoc, serverTimestamp } from "firebase/firestore";
+import { activityLogsCol } from "./firebase";
+import { logger } from "./logger";
 
 export const logActivity = async (
   userId: string,
   userName: string,
   action: string,
-  description: string
-) => {
+  details: string,
+  category: "meal" | "bazar" | "payment" | "fine" | "rent" | "system" = "system"
+): Promise<void> => {
   try {
-    await addDoc(collection(db, "activity_logs"), {
+    await addDoc(activityLogsCol, {
+      id: "",
       userId,
       userName,
       action,
-      description,
+      details,
+      category,
       timestamp: serverTimestamp(),
     });
   } catch (error) {
-    console.error("Error logging activity:", error);
+    logger.error("Error logging activity:", error);
   }
 };

@@ -19,6 +19,16 @@ import { formatCurrency } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
 import { motion, AnimatePresence } from "framer-motion";
 
+function safeParseDate(val: unknown): Date {
+  if (!val) return new Date();
+  if (typeof val === "object" && val !== null && "toDate" in val && typeof (val as { toDate?: Function }).toDate === "function") {
+    return (val as { toDate: () => Date }).toDate();
+  }
+  if (val instanceof Date) return val;
+  const parsed = new Date(val as string | number);
+  return isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
 interface MealEntry {
   id: string;
   userId: string;
@@ -36,12 +46,12 @@ interface PaymentEntry {
   paymentFor: string;
   paymentMethod: string;
   reference: string;
-  date: any;
+  date: unknown;
 }
 
 interface BazarEntry {
   id: string;
-  date: any;
+  date: unknown;
   amount: number;
   description: string;
   spenderId: string;
@@ -105,11 +115,7 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
         paymentsData.push({ id: d.id, ...d.data() } as PaymentEntry);
       });
       // Sort client-side by date descending
-      paymentsData.sort((a, b) => {
-        const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date || 0);
-        const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
-        return dateB.getTime() - dateA.getTime();
-      });
+      paymentsData.sort((a, b) => safeParseDate(b.date).getTime() - safeParseDate(a.date).getTime());
       setPayments(paymentsData);
 
       // 4. Fetch bazar contributions where this member is the spender
@@ -123,11 +129,7 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
       bazarSnap.forEach(d => {
         bazarData.push({ id: d.id, ...d.data() } as BazarEntry);
       });
-      bazarData.sort((a, b) => {
-        const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
-        const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
-        return dateB.getTime() - dateA.getTime();
-      });
+      bazarData.sort((a, b) => safeParseDate(b.date).getTime() - safeParseDate(a.date).getTime());
       setBazarContributions(bazarData);
 
       // 5. Fetch current month's meal rate for status calculation
@@ -361,13 +363,7 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
                         </thead>
                         <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                           {payments.filter(p => p.paymentFor === "meal").map(payment => {
-                            let dateObj: Date;
-                            try {
-                              dateObj = payment.date?.toDate ? payment.date.toDate() : (payment.date ? new Date(payment.date) : new Date());
-                              if (isNaN(dateObj.getTime())) dateObj = new Date();
-                            } catch {
-                              dateObj = new Date();
-                            }
+                            const dateObj = safeParseDate(payment.date);
                             return (
                               <tr key={payment.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                                 <td className="px-4 py-2 text-[11px] font-semibold text-gray-900 dark:text-white">
@@ -415,7 +411,7 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
                         </thead>
                         <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                           {bazarContributions.map(entry => {
-                            const dateObj = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+                            const dateObj = safeParseDate(entry.date);
                             return (
                               <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                                 <td className="px-4 py-2 text-[11px] font-semibold text-gray-900 dark:text-white">

@@ -1,35 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDocs, query, orderBy, limit } from "firebase/firestore";
+import { activityLogsCol } from "@/lib/firebase";
 import { History, User, Clock, Activity as ActivityIcon } from "lucide-react";
 import { format } from "date-fns";
-
-interface ActivityLog {
-  id: string;
-  userId: string;
-  userName: string;
-  action: string;
-  description: string;
-  timestamp: any;
-}
-
+import type { ActivityLog } from "@/lib/types/firestore";
 import { motion } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const container = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
-    transition: {
-      staggerChildren: 0.05
-    }
-  }
+    transition: { staggerChildren: 0.05 },
+  },
 };
 
 const item = {
   hidden: { x: -20, opacity: 0 },
-  show: { x: 0, opacity: 1 }
+  show: { x: 0, opacity: 1 },
 };
 
 export default function ActivityPage() {
@@ -39,15 +31,12 @@ export default function ActivityPage() {
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        const q = query(
-          collection(db, "activity_logs"),
-          orderBy("timestamp", "desc"),
-          limit(100)
-        );
+        const q = query(activityLogsCol, orderBy("timestamp", "desc"), limit(100));
         const querySnapshot = await getDocs(q);
         const logsData: ActivityLog[] = [];
-        querySnapshot.forEach((doc) => {
-          logsData.push({ id: doc.id, ...doc.data() } as ActivityLog);
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          logsData.push({ ...data, id: docSnap.id } as ActivityLog);
         });
         setLogs(logsData);
       } catch (error) {
@@ -60,84 +49,81 @@ export default function ActivityPage() {
     fetchLogs();
   }, []);
 
-  const getActionColor = (action: string) => {
-    if (action.includes("ADDED")) return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200";
-    if (action.includes("DELETED")) return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200";
-    if (action.includes("UPDATED")) return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200";
-    if (action.includes("CLOSED")) return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200";
-    return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 border-gray-200";
+  const getActionBadgeVariant = (action: string) => {
+    if (action.includes("ADDED") || action.includes("APPROVED")) return "success";
+    if (action.includes("DELETED") || action.includes("REJECTED")) return "danger";
+    if (action.includes("UPDATED") || action.includes("EDIT")) return "info";
+    if (action.includes("CLOSED")) return "warning";
+    return "default";
   };
 
   if (loading) {
     return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="h-8 w-8 rounded-full border-4 border-indigo-500 border-t-transparent"
-        />
+      <div className="p-4 sm:p-6 lg:p-8 space-y-4 max-w-5xl mx-auto">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <div className="space-y-4">
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+        </div>
       </div>
     );
   }
 
   return (
-    <motion.main 
+    <motion.main
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-8"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-card p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-card">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <History className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+            <History className="h-6 w-6 text-brand" />
             System Activity Logs
           </h1>
-          <p className="mt-1 text-sm text-gray-500">A detailed history of all actions performed.</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">A detailed audit history of all system events.</p>
         </div>
-        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-100 dark:border-gray-800">
-          Showing last 100 events
+        <div className="text-xs font-semibold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700">
+          Last 100 events
         </div>
       </div>
 
       <div className="relative">
-        <div className="absolute left-4 top-0 h-full w-0.5 bg-gray-100 dark:bg-gray-700 sm:left-6"></div>
+        <div className="absolute left-4 top-0 h-full w-0.5 bg-zinc-200 dark:bg-zinc-800 sm:left-6"></div>
 
-        <motion.div 
-          variants={container}
-          initial="hidden"
-          animate="show"
-          className="space-y-6"
-        >
+        <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
           {logs.map((log) => {
-            const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date();
-            
+            const rawTs = log.timestamp as { toDate?: () => Date } | string | Date;
+            const date = typeof rawTs === "object" && rawTs !== null && "toDate" in rawTs && typeof rawTs.toDate === "function"
+              ? rawTs.toDate()
+              : new Date();
+
             return (
               <motion.div variants={item} key={log.id} className="relative pl-10 sm:pl-14 group">
-                <div className={`absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-white ring-4 ring-gray-50 dark:bg-gray-900 dark:ring-gray-800 sm:h-12 sm:w-12 shadow-sm transition-all group-hover:scale-110 ${
-                  log.action.includes("DELETED") ? "text-red-500" : 
-                  log.action.includes("ADDED") ? "text-green-500" : "text-indigo-500"
-                }`}>
+                <div className="absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-card ring-4 ring-zinc-100 dark:ring-zinc-900 sm:h-12 sm:w-12 shadow-sm transition-all group-hover:scale-110 text-brand">
                   <ActivityIcon className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
 
-                <div className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 hover:shadow-lg hover:shadow-indigo-500/5 transition-all">
+                <div className="rounded-2xl bg-card p-5 border border-zinc-200 dark:border-zinc-800 shadow-card hover:shadow-card-hover transition-all">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex items-center rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-tighter border ${getActionColor(log.action)}`}>
+                      <Badge variant={getActionBadgeVariant(log.action)}>
                         {log.action.replace(/_/g, " ")}
-                      </span>
-                      <h3 className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-1.5">
-                        <User className="h-3 w-3 text-indigo-400" />
+                      </Badge>
+                      <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                        <User className="h-3.5 w-3.5 text-brand" />
                         {log.userName}
                       </h3>
                     </div>
-                    <time className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-tight">
-                      <Clock className="h-3 w-3" />
+                    <time className="flex items-center gap-1.5 text-xs text-zinc-400">
+                      <Clock className="h-3.5 w-3.5" />
                       {format(date, "MMM dd, yyyy • hh:mm a")}
                     </time>
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-medium">
-                    {log.description}
+                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed font-medium">
+                    {log.details || (log as unknown as { description?: string }).description}
                   </p>
                 </div>
               </motion.div>
@@ -145,10 +131,11 @@ export default function ActivityPage() {
           })}
 
           {logs.length === 0 && (
-            <motion.div variants={item} className="text-center py-16 bg-white rounded-2xl border-2 border-dashed border-gray-100 dark:bg-gray-800 dark:border-gray-700/50">
-              <History className="h-12 w-12 text-gray-200 mx-auto mb-4" />
-              <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">No activity logs found</p>
-            </motion.div>
+            <EmptyState
+              icon={<History className="h-10 w-10 text-zinc-400" />}
+              title="No activity logs found"
+              description="System activities will appear here as actions are performed."
+            />
           )}
         </motion.div>
       </div>

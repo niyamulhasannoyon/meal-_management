@@ -23,37 +23,42 @@ export const formatCurrency = (value: number | string): string => {
   }).format(num);
 };
 
-export const getMonthStr = (dateVal: any): string => {
+export interface DateLikeObj {
+  toDate?: () => Date;
+  seconds?: number;
+}
+
+export const getMonthStr = (dateVal: DateLikeObj | Date | string | number | null | undefined): string => {
   if (!dateVal) return "";
   if (typeof dateVal === "string") {
     return dateVal.length >= 7 ? dateVal.substring(0, 7) : dateVal;
   }
-  if (dateVal?.toDate) {
+  if (typeof dateVal === "object" && dateVal !== null && "toDate" in dateVal && typeof dateVal.toDate === "function") {
     return format(dateVal.toDate(), "yyyy-MM");
   }
   if (dateVal instanceof Date) {
     return format(dateVal, "yyyy-MM");
   }
   try {
-    return format(new Date(dateVal), "yyyy-MM");
+    return format(new Date(dateVal as string | number), "yyyy-MM");
   } catch {
     return "";
   }
 };
 
-export const getDateStr = (dateVal: any): string => {
+export const getDateStr = (dateVal: DateLikeObj | Date | string | number | null | undefined): string => {
   if (!dateVal) return "";
   if (typeof dateVal === "string") {
     return dateVal.length >= 10 ? dateVal.substring(0, 10) : dateVal;
   }
-  if (dateVal?.toDate) {
+  if (typeof dateVal === "object" && dateVal !== null && "toDate" in dateVal && typeof dateVal.toDate === "function") {
     return format(dateVal.toDate(), "yyyy-MM-dd");
   }
   if (dateVal instanceof Date) {
     return format(dateVal, "yyyy-MM-dd");
   }
   try {
-    return format(new Date(dateVal), "yyyy-MM-dd");
+    return format(new Date(dateVal as string | number), "yyyy-MM-dd");
   } catch {
     return "";
   }
