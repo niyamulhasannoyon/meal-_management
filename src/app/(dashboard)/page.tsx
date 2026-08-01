@@ -2,558 +2,341 @@
 
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
-import { Calculator, Home, Users, FileText, Activity, TrendingUp, ShoppingBag, Utensils, Scale, Clock, Settings } from "lucide-react";
+import {
+  Calculator,
+  Users,
+  FileText,
+  Activity,
+  ShoppingBag,
+  Utensils,
+  Scale,
+  Settings,
+  CreditCard,
+  Building,
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, orderBy, limit, doc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { format, startOfMonth, eachDayOfInterval, endOfMonth, isSameDay } from "date-fns";
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  ComposedChart,
-  AreaChart, 
-  Area 
-} from 'recharts';
-
+import { format, startOfMonth } from "date-fns";
 import { motion } from "framer-motion";
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1
-    }
-  }
-};
-
-const item = {
-  hidden: { y: 20, opacity: 0 },
-  show: { y: 0, opacity: 1 }
-};
+import { StatCard } from "@/components/ui/stat-card";
+import { Button } from "@/components/ui/button";
+import { MealCalendarHeatmap } from "@/components/dashboard/MealCalendarHeatmap";
+import { AdminAttentionPanel, type AttentionItem } from "@/components/dashboard/AdminAttentionPanel";
+import { calculateLedger } from "@/lib/calculations";
+import { formatCurrency } from "@/lib/utils";
+import { staggerContainer, fadeIn } from "@/lib/motion";
 
 export default function Dashboard() {
   const { profile } = useAuth();
   const [stats, setStats] = useState({
     mealRate: 0,
     totalMeals: 0,
-    totalBazar: 0
+    totalBazar: 0,
   });
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [myBalance, setMyBalance] = useState<{ amount: number; isDue: boolean } | null>(null);
+  const [mealEntries, setMealEntries] = useState<Record<string, { breakfast: number; lunch: number; dinner: number }>>({});
+  const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    const currentMonth = format(new Date(), "yyyy-MM");
-    const monthStart = startOfMonth(new Date());
-    const monthEnd = endOfMonth(new Date());
-    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-    
-    let mealsRaw: any[] = [];
-    let bazarRaw: any[] = [];
-    let finesRaw: any[] = [];
-    let isClosed = false;
-    let closedStats = { mealRate: 0, totalMeals: 0, totalBazar: 0 };
-    let membersList: string[] = [];
-    let systemStartDate = "";
+    fetchDashboardData();
+  }, [profile]);
 
-    const updateStats = () => {
-      let currentMealRate = 0;
-      let currentTotalMeals = 0;
-      let currentTotalBazar = 0;
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      const currentMonth = format(new Date(), "yyyy-MM");
 
-      if (isClosed) {
-        currentMealRate = closedStats.mealRate;
-        currentTotalMeals = closedStats.totalMeals;
-        currentTotalBazar = closedStats.totalBazar;
-      } else {
-        const mealsMap: Record<string, number> = {};
-        mealsRaw.forEach(m => {
-          if (membersList.includes(m.userId) && (!systemStartDate || m.date >= systemStartDate)) {
-            mealsMap[m.id] = m.totalMeals || 0;
-          }
-        });
+      // 1. Fetch Users
+      const usersSnap = await getDocs(collection(db, "users"));
+      const usersList: { id: string; name: string; role: string }[] = [];
+      let pendingUsersCount = 0;
 
-        const totalRegularMeals = Object.values(mealsMap).reduce((a, b) => (a as number) + (b as number), 0);
-        
-        let totalFines = 0;
-        finesRaw.forEach(f => {
-          if (membersList.includes(f.userId) && (!systemStartDate || f.date >= systemStartDate)) {
-            totalFines += f.amount;
+      usersSnap.forEach((d) => {
+        const data = d.data();
+        usersList.push({ id: d.id, name: data.name || "Member", role: data.role || "visitor" });
+        if (data.role === "pending" || data.role === "visitor") {
+          pendingUsersCount++;
+        }
+      });
+
+      // 2. Fetch Meals for current month
+      const mealsSnap = await getDocs(collection(db, "meals"));
+      const userMeals: Record<string, number> = {};
+      const heatMapData: Record<string, { breakfast: number; lunch: number; dinner: number }> = {};
+      let loggedTodayCount = 0;
+      const todayStr = format(new Date(), "yyyy-MM-dd");
+
+      mealsSnap.forEach((d) => {
+        const data = d.data();
+        if (data.date && data.date.startsWith(currentMonth)) {
+          const total = Number(data.count || data.totalMeals || 0);
+          userMeals[data.userId] = (userMeals[data.userId] || 0) + total;
+
+          if (data.userId === profile?.id) {
+            heatMapData[data.date] = {
+              breakfast: Number(data.breakfast || (total > 0 ? 0.5 : 0)),
+              lunch: Number(data.lunch || (total > 0 ? 1 : 0)),
+              dinner: Number(data.dinner || (total > 0 ? 1 : 0)),
+            };
           }
-        });
-        
-        currentTotalMeals = totalRegularMeals + totalFines;
-        
-        bazarRaw.forEach(b => {
-          if (!systemStartDate || b.date >= systemStartDate) {
-            currentTotalBazar += b.amount;
+
+          if (data.date === todayStr && total > 0) {
+            loggedTodayCount++;
           }
-        });
-        
-        currentMealRate = currentTotalMeals > 0 ? currentTotalBazar / currentTotalMeals : 0;
-      }
+        }
+      });
+
+      // 3. Fetch Fines for current month
+      const finesSnap = await getDocs(collection(db, "fines"));
+      const userFines: Record<string, number> = {};
+      finesSnap.forEach((d) => {
+        const data = d.data();
+        if (data.date && data.date.startsWith(currentMonth)) {
+          userFines[data.userId] = (userFines[data.userId] || 0) + Number(data.amount || 0);
+        }
+      });
+
+      // 4. Fetch Bazar Costs for current month
+      const bazarSnap = await getDocs(collection(db, "bazar_costs"));
+      const userBazarDeposits: Record<string, number> = {};
+      let totalBazar = 0;
+      bazarSnap.forEach((d) => {
+        const data = d.data();
+        if (data.date && data.date.startsWith(currentMonth)) {
+          const amt = Number(data.amount || 0);
+          totalBazar += amt;
+          if (data.spenderId) {
+            userBazarDeposits[data.spenderId] = (userBazarDeposits[data.spenderId] || 0) + amt;
+          }
+        }
+      });
+
+      // 5. Fetch Direct Payments for current month
+      const paymentsSnap = await getDocs(collection(db, "payments"));
+      const userDirectDeposits: Record<string, number> = {};
+      paymentsSnap.forEach((d) => {
+        const data = d.data();
+        if (data.date && (data.date.startsWith(currentMonth) || data.month === currentMonth)) {
+          userDirectDeposits[data.userId] = (userDirectDeposits[data.userId] || 0) + Number(data.amount || 0);
+        }
+      });
+
+      // Compute Ledger
+      const ledgerResult = calculateLedger({
+        userMeals,
+        userFines,
+        userDirectDeposits,
+        userBazarDeposits,
+        totalBazar,
+        users: usersList,
+      });
 
       setStats({
-        mealRate: currentMealRate,
-        totalMeals: currentTotalMeals,
-        totalBazar: currentTotalBazar
+        mealRate: ledgerResult.mealRate,
+        totalMeals: ledgerResult.totalMeals,
+        totalBazar: ledgerResult.totalBazar,
       });
 
-      let cumulativeMeals = 0;
-      let cumulativeBazar = 0;
+      setMealEntries(heatMapData);
 
-      const formattedChartData = days.map(day => {
-        const dateStr = format(day, "yyyy-MM-dd");
-        let dayTotalMeals = 0;
-        mealsRaw.forEach(m => {
-          if (m.date === dateStr && membersList.includes(m.userId) && (!systemStartDate || m.date >= systemStartDate)) {
-            dayTotalMeals += m.totalMeals || 0;
-          }
-        });
+      // Personal balance
+      if (profile?.id) {
+        const myCalc = ledgerResult.users.find((u) => u.id === profile.id);
+        if (myCalc) {
+          setMyBalance({
+            amount: Math.abs(myCalc.balance),
+            isDue: myCalc.balance < 0,
+          });
+        }
+      }
 
-        let dayBazar = 0;
-        bazarRaw.forEach(b => {
-          if (b.date === dateStr && (!systemStartDate || b.date >= systemStartDate)) {
-            dayBazar += b.amount || 0;
-          }
-        });
+      // Attention items for Admin
+      if (profile?.role === "admin") {
+        const alerts: AttentionItem[] = [];
 
-        cumulativeMeals += dayTotalMeals;
-        cumulativeBazar += dayBazar;
+        if (pendingUsersCount > 0) {
+          alerts.push({
+            id: "pending_users",
+            type: "pending_user",
+            title: "Pending Member Approvals",
+            description: `${pendingUsersCount} new member(s) waiting for account approval.`,
+            actionText: "Review Members",
+            actionHref: "/users",
+          });
+        }
 
-        const dynamicRate = cumulativeMeals > 0 ? Number((cumulativeBazar / cumulativeMeals).toFixed(2)) : 0;
+        const deepDueMembers = ledgerResult.users.filter((u) => u.balance < -1500);
+        if (deepDueMembers.length > 0) {
+          alerts.push({
+            id: "deep_due",
+            type: "deep_due",
+            title: "Members in Deep Due (> ৳1,500)",
+            description: `${deepDueMembers.length} member(s) owe substantial balance for this month.`,
+            actionText: "Open Ledger",
+            actionHref: "/ledger",
+          });
+        }
 
-        return {
-          name: format(day, "dd"),
-          meals: dayTotalMeals,
-          rate: isClosed ? Number(currentMealRate.toFixed(2)) : dynamicRate
-        };
-      }).filter(d => parseInt(d.name) <= parseInt(format(new Date(), "dd")));
-      
-      setChartData(formattedChartData);
+        const activeMembersCount = usersList.filter((u) => u.role === "member" || u.role === "admin").length;
+        if (loggedTodayCount < activeMembersCount) {
+          alerts.push({
+            id: "unlogged_meals",
+            type: "unlogged_meals",
+            title: "Today's Meal Logging",
+            description: `${activeMembersCount - loggedTodayCount} active member(s) have not logged meals today.`,
+            actionText: "Log Meals",
+            actionHref: "/meals",
+          });
+        }
+
+        setAttentionItems(alerts);
+      }
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const activeMembers: string[] = [];
-      let pending = 0;
-      snapshot.forEach(docSnap => {
-        const uData = docSnap.data();
-        if (uData.role === "pending") {
-          pending++;
-        } else if (uData.role === "member") {
-          activeMembers.push(docSnap.id);
-        }
-      });
-      membersList = activeMembers;
-      setPendingCount(pending);
-      updateStats();
-    });
-
-    const unsubscribeSettings = onSnapshot(doc(db, "system_config", "settings"), (docSnap) => {
-      if (docSnap.exists()) {
-        systemStartDate = docSnap.data().systemStartDate || "";
-      } else {
-        systemStartDate = "";
-      }
-      updateStats();
-    });
-
-    const unsubscribeLedger = onSnapshot(doc(db, "monthly_ledgers", currentMonth), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.isClosed) {
-          isClosed = true;
-          closedStats = {
-            mealRate: Number(data.mealRate) || 0,
-            totalMeals: Number(data.totalMeals) || 0,
-            totalBazar: Number(data.totalBazar) || 0
-          };
-        } else {
-          isClosed = false;
-        }
-      } else {
-        isClosed = false;
-      }
-      updateStats();
-    });
-
-    const unsubscribeMeals = onSnapshot(collection(db, "meals"), (snapshot) => {
-      const data: any[] = [];
-      snapshot.forEach(doc => {
-        const mData = doc.data();
-        const dateStr = mData.date || (doc.id.length >= 7 ? doc.id.substring(0, 10) : "");
-        if (dateStr && dateStr.startsWith(currentMonth)) {
-          data.push({ id: doc.id, ...mData });
-        }
-      });
-      mealsRaw = data;
-      updateStats();
-    });
-
-    const unsubscribeBazar = onSnapshot(collection(db, "bazar_costs"), (snapshot) => {
-      const data: any[] = [];
-      snapshot.forEach(doc => {
-        const bData = doc.data();
-        let dateStr = "";
-        if (typeof bData.date === "string") dateStr = bData.date;
-        else if (bData.date?.toDate) dateStr = format(bData.date.toDate(), "yyyy-MM-dd");
-
-        if (dateStr && dateStr.startsWith(currentMonth)) {
-          data.push({ amount: Number(bData.amount) || 0, date: dateStr });
-        }
-      });
-      bazarRaw = data;
-      updateStats();
-    });
-
-    const unsubscribeFines = onSnapshot(collection(db, "fines"), (snapshot) => {
-      const data: any[] = [];
-      snapshot.forEach(docSnap => {
-        const bData = docSnap.data();
-        const dateObj = bData.date?.toDate ? bData.date.toDate() : (bData.date ? new Date(bData.date) : new Date());
-        const dateStr = format(dateObj, "yyyy-MM-dd");
-        if (format(dateObj, "yyyy-MM") === currentMonth) {
-          data.push({ id: docSnap.id, amount: Number(bData.amount) || 0, date: dateStr, userId: bData.userId });
-        }
-      });
-      finesRaw = data;
-      updateStats();
-    });
-
-    const unsubscribeActivity = onSnapshot(query(collection(db, "activity_logs"), orderBy("timestamp", "desc"), limit(5)), (snapshot) => {
-      const logs: any[] = [];
-      snapshot.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-      setRecentLogs(logs);
-    });
-
-    return () => {
-      unsubscribeMeals();
-      unsubscribeBazar();
-      unsubscribeFines();
-      unsubscribeActivity();
-      unsubscribeLedger();
-      unsubscribeUsers();
-      unsubscribeSettings();
-    };
-  }, []);
+  const quickLinks = [
+    { name: "Meals", href: "/meals", icon: Utensils, color: "bg-orange-500/10 text-orange-600" },
+    { name: "Ledger", href: "/ledger", icon: Calculator, color: "bg-blue-500/10 text-blue-600" },
+    { name: "Rent & Bills", href: "/rent", icon: Building, color: "bg-emerald-500/10 text-emerald-600" },
+    { name: "House Rules", href: "/rules", icon: Scale, color: "bg-red-500/10 text-red-600" },
+    { name: "Members", href: "/users", icon: Users, color: "bg-purple-500/10 text-purple-600" },
+    { name: "Settings", href: "/settings", icon: Settings, color: "bg-zinc-500/10 text-zinc-600" },
+  ];
 
   return (
-    <motion.main 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
+    <motion.main
+      variants={staggerContainer}
+      initial="hidden"
+      animate="visible"
+      className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto"
     >
-      <motion.div 
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4"
-      >
+      {/* Header */}
+      <motion.div variants={fadeIn} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            Hi, {profile?.name?.split(' ')[0] || 'User'}! 👋
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+            Welcome back, {profile?.name || "Member"} 👋
           </h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Everything looks good today. Here's what's happening.</p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Overview for {format(new Date(), "MMMM yyyy")}
+          </p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl text-indigo-700 dark:text-indigo-300 text-sm font-medium">
-          <Clock className="h-4 w-4" />
-          {format(new Date(), "EEEE, MMM dd, yyyy")}
+        <div className="flex items-center space-x-2">
+          <Link href="/meals">
+            <Button variant="primary" size="sm">
+              <Utensils className="w-4 h-4 mr-1.5" />
+              Manage Today's Meals
+            </Button>
+          </Link>
         </div>
       </motion.div>
 
-      {/* PENDING APPROVAL ALERT FOR ADMINS/MODERATORS */}
-      {(profile?.role === "admin" || profile?.role === "moderator") && pendingCount > 0 && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8 p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/15 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white font-black shadow-md shadow-amber-500/30">
-              <Clock className="h-5 w-5 animate-pulse" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-amber-950 dark:text-amber-200 text-base flex items-center gap-2">
-                Pending Member Approvals
-                <span className="inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-xs font-black text-white">
-                  {pendingCount} waiting
-                </span>
-              </h3>
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-                New member accounts are registered and awaiting your approval to access the mess.
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/users"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all hover:scale-105 shrink-0"
-          >
-            Review & Approve Members
-          </Link>
+      {/* Admin Attention Panel */}
+      {profile?.role === "admin" && (
+        <motion.div variants={fadeIn}>
+          <AdminAttentionPanel items={attentionItems} />
         </motion.div>
       )}
 
-      <motion.div 
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 mb-10"
-      >
-         {/* Stats Cards */}
-         <motion.div variants={item} whileHover={{ scale: 1.02, y: -5 }} className="relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/20">
-                <TrendingUp className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Meal Rate</h3>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">৳ {stats.mealRate.toFixed(2)}</p>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center text-xs text-purple-600 font-medium">
-              Real-time calculation for {format(new Date(), 'MMMM')}
-            </div>
-         </motion.div>
-
-         <motion.div variants={item} whileHover={{ scale: 1.02, y: -5 }} className="relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/20">
-                <ShoppingBag className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Bazar</h3>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">৳ {stats.totalBazar}</p>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center text-xs text-blue-600 font-medium">
-              Total expenditure this month
-            </div>
-         </motion.div>
-
-         <motion.div variants={item} whileHover={{ scale: 1.02, y: -5 }} className="relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-50 text-green-600 dark:bg-green-900/20">
-                <Utensils className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Meals</h3>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalMeals}</p>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center text-xs text-green-600 font-medium">
-              Total meals consumed across all members
-            </div>
-         </motion.div>
+      {/* Key Metric Cards */}
+      <motion.div variants={fadeIn} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          title="Current Meal Rate"
+          value={`৳${stats.mealRate.toFixed(2)}`}
+          subtitle="Total Bazar / Total Meals"
+          variant="brand"
+          icon={<Calculator className="w-5 h-5 text-brand" />}
+        />
+        <StatCard
+          title="Month-to-Date Bazar"
+          value={`৳${formatCurrency(stats.totalBazar)}`}
+          subtitle="Spent on mess supplies"
+          variant="amber"
+          icon={<ShoppingBag className="w-5 h-5 text-amberAccent-500" />}
+        />
+        <StatCard
+          title="Total Meals Eaten"
+          value={stats.totalMeals}
+          subtitle="Across all mess members"
+          variant="default"
+          icon={<Utensils className="w-5 h-5 text-zinc-600" />}
+        />
+        <StatCard
+          title="Personal Balance"
+          value={
+            myBalance
+              ? `${myBalance.isDue ? "-" : "+"}৳${formatCurrency(myBalance.amount)}`
+              : "৳0"
+          }
+          subtitle={myBalance?.isDue ? "Amount due for this month" : "Surplus overpayment"}
+          variant={myBalance?.isDue ? "due" : "surplus"}
+          icon={<CreditCard className="w-5 h-5" />}
+        />
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-        {/* Chart Section */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3 }}
-          className="lg:col-span-2 rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50"
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-indigo-500" />
-              Daily Meal Trend
-            </h3>
-            <span className="text-xs text-gray-500">{format(new Date(), 'MMMM yyyy')}</span>
-          </div>
-          <div className="h-[300px] w-full relative overflow-visible">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorMeals" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fontSize: 12, fill: '#9ca3af'}} 
-                  dy={10}
-                />
-                <YAxis 
-                  yAxisId="left"
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fontSize: 12, fill: '#9ca3af'}}
-                />
-                <YAxis 
-                  yAxisId="right"
-                  orientation="right"
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fontSize: 12, fill: '#10b981'}}
-                />
-                <Tooltip 
-                  wrapperStyle={{ zIndex: 50 }}
-                  contentStyle={{ 
-                    borderRadius: '16px', 
-                    border: 'none', 
-                    boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
-                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                    backdropFilter: 'blur(10px)'
-                  }}
-                  itemStyle={{ fontWeight: 'bold' }}
-                />
-                <Area 
-                  yAxisId="left"
-                  type="monotone" 
-                  dataKey="meals" 
-                  name="Daily Meals"
-                  stroke="#6366f1" 
-                  strokeWidth={3}
-                  fillOpacity={1} 
-                  fill="url(#colorMeals)" 
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="rate"
-                  name="Meal Rate"
-                  stroke="#10b981"
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
+      {/* Main Content Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left 2 Columns: Heatmap & Quick Access */}
+        <div className="lg:col-span-2 space-y-6">
+          <motion.div variants={fadeIn}>
+            <MealCalendarHeatmap mealEntries={mealEntries} />
+          </motion.div>
 
-        {/* Recent Activity Mini List */}
-        <motion.div 
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4 }}
-          className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50"
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Activity className="h-5 w-5 text-indigo-500" />
-              Recent Activity
+          <motion.div variants={fadeIn} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-card p-5 shadow-card">
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {quickLinks.map((item) => {
+                const IconComponent = item.icon;
+                return (
+                  <Link key={item.name} href={item.href}>
+                    <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-all text-center group cursor-pointer">
+                      <div className={`p-2.5 rounded-xl ${item.color} mb-2 group-hover:scale-110 transition-transform`}>
+                        <IconComponent className="w-5 h-5" />
+                      </div>
+                      <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{item.name}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Right 1 Column: Information & Activity Link */}
+        <motion.div variants={fadeIn} className="space-y-6">
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-card p-5 shadow-card space-y-4">
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-between">
+              <span>Mess Overview</span>
+              <Activity className="w-4 h-4 text-brand" />
             </h3>
-            <Link href="/activity" className="text-xs text-indigo-600 hover:underline">View All</Link>
-          </div>
-          <div className="space-y-4">
-            {recentLogs.map((log) => (
-              <div key={log.id} className="flex items-start gap-3 group">
-                <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0 group-hover:scale-150 transition-transform"></div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">{log.description}</p>
-                  <p className="text-[10px] text-gray-500">{log.userName} • {log.timestamp?.toDate ? format(log.timestamp.toDate(), 'hh:mm a') : 'Just now'}</p>
-                </div>
+            <div className="space-y-3 text-xs text-zinc-600 dark:text-zinc-400 divide-y divide-zinc-100 dark:divide-zinc-800/60">
+              <div className="pt-2 flex justify-between">
+                <span>Month</span>
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">{format(new Date(), "MMMM yyyy")}</span>
               </div>
-            ))}
-            {recentLogs.length === 0 && <p className="text-sm text-gray-500 italic">No recent activity.</p>}
+              <div className="pt-2 flex justify-between">
+                <span>Daily Cutoff Time</span>
+                <span className="font-semibold text-amberAccent-600">10:00 PM</span>
+              </div>
+              <div className="pt-2 flex justify-between">
+                <span>Role</span>
+                <span className="font-semibold uppercase text-brand">{profile?.role || "Member"}</span>
+              </div>
+            </div>
+            <Link href="/activity" className="block pt-2">
+              <Button variant="outline" size="sm" className="w-full text-xs">
+                <Activity className="w-3.5 h-3.5 mr-1.5" />
+                View Full Audit Logs
+              </Button>
+            </Link>
           </div>
         </motion.div>
       </div>
-
-      <motion.h2 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="text-xl font-semibold text-gray-900 dark:text-white mb-6"
-      >
-        Quick Actions
-      </motion.h2>
-
-      <motion.div 
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
-      >
-        <Link href="/meals" className="group block">
-          <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-900/20 transition-colors group-hover:bg-purple-600 group-hover:text-white">
-              <Calculator className="h-6 w-6" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-purple-600 transition-colors">Daily Meals</h3>
-            <p className="mt-2 text-sm text-gray-500">Track and update daily meal counts for members.</p>
-          </motion.div>
-        </Link>
-
-        <Link href="/ledger" className="group block">
-          <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/20 transition-colors group-hover:bg-blue-600 group-hover:text-white">
-              <FileText className="h-6 w-6" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors">Monthly Ledger</h3>
-            <p className="mt-2 text-sm text-gray-500">View overall meal costs, deposits, and balances.</p>
-          </motion.div>
-        </Link>
-
-        <Link href="/rent" className="group block">
-          <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-50 text-green-600 dark:bg-green-900/20 transition-colors group-hover:bg-green-600 group-hover:text-white">
-              <Home className="h-6 w-6" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-green-600 transition-colors">Rent Manager</h3>
-            <p className="mt-2 text-sm text-gray-500">Manage house rent and shared utility bills.</p>
-          </motion.div>
-        </Link>
-
-        {(profile?.role === 'admin' || profile?.role === 'moderator') && (
-          <Link href="/users" className="group block">
-            <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-900/20 transition-colors group-hover:bg-orange-600 group-hover:text-white">
-                <Users className="h-6 w-6" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-orange-600 transition-colors">Members</h3>
-              <p className="mt-2 text-sm text-gray-500">Manage mess members, roles, and status.</p>
-            </motion.div>
-          </Link>
-        )}
-
-        {profile?.role === 'admin' && (
-          <Link href="/activity" className="group block">
-            <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 transition-colors group-hover:bg-amber-600 group-hover:text-white">
-                <Activity className="h-6 w-6" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-amber-600 transition-colors">Activity Logs</h3>
-              <p className="mt-2 text-sm text-gray-500">View recent administrative actions and logs.</p>
-            </motion.div>
-          </Link>
-        )}
-        
-        <Link href="/rules" className="group block">
-          <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-900/20 transition-colors group-hover:bg-red-600 group-hover:text-white">
-              <Scale className="h-6 w-6" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-red-600 transition-colors">Rules & Fines</h3>
-            <p className="mt-2 text-sm text-gray-500">View house rules and manage member fines/penalties.</p>
-          </motion.div>
-        </Link>
-
-        {profile?.role === 'admin' && (
-          <Link href="/settings" className="group block">
-            <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} className="relative flex flex-col rounded-2xl bg-white p-6 shadow-sm border border-gray-100 dark:bg-gray-800 dark:border-gray-700/50 h-full">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-slate-600 dark:bg-slate-900/20 transition-colors group-hover:bg-slate-600 group-hover:text-white">
-                <Settings className="h-6 w-6" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white group-hover:text-slate-600 transition-colors">Settings</h3>
-              <p className="mt-2 text-sm text-gray-500">Configure system parameters and start dates.</p>
-            </motion.div>
-          </Link>
-        )}
-      </motion.div>
     </motion.main>
   );
 }
