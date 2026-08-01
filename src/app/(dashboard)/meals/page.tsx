@@ -5,7 +5,7 @@ import { collection, getDocs, doc, getDoc, setDoc, query, where, addDoc, updateD
 import { db } from "@/lib/firebase";
 import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format } from "date-fns";
-import { Utensils, ShoppingBag, Plus, Save, Calendar, Clock, Edit3, Trash2, ChevronDown, ChevronUp, History, X } from "lucide-react";
+import { Utensils, ShoppingBag, Plus, Save, Calendar, Clock, Edit3, Trash2, ChevronDown, ChevronUp, History, X, Check, Star } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
 import { sortUsers, formatCurrency } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -16,15 +16,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { MealCutoffBanner } from "@/components/meals/MealCutoffBanner";
-import {
-  TableContainer,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
+import { getRoleTheme } from "@/lib/theme";
 import { staggerContainer, fadeIn } from "@/lib/motion";
 
 interface MealEntry {
@@ -53,7 +45,6 @@ export default function MealsPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [meals, setMeals] = useState<Record<string, MealEntry>>({});
-  const [isSubmittedForDate, setIsSubmittedForDate] = useState(false);
 
   // Bazar state
   const [bazarAmount, setBazarAmount] = useState("");
@@ -89,7 +80,7 @@ export default function MealsPage() {
       const isValidSpender = users.some((u) => u.id === bazarSpenderId);
       if (!isValidSpender) {
         const isMember = users.some((u) => u.id === profile?.id);
-        const defaultSpender = isMember ? profile?.id || "" : "";
+        const defaultSpender = isMember ? profile?.id || "" : users[0]?.id || "";
         if (bazarSpenderId !== defaultSpender) {
           setBazarSpenderId(defaultSpender);
         }
@@ -127,7 +118,8 @@ export default function MealsPage() {
       const usersData: UserProfile[] = [];
       usersSnap.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.role === "member" || data.role === "admin" || data.role === "moderator") {
+        // ONLY include users with role === 'member'
+        if (data.role === "member") {
           usersData.push({ id: docSnap.id, ...data } as UserProfile);
         }
       });
@@ -161,8 +153,6 @@ export default function MealsPage() {
       });
 
       setMeals(mealsMap);
-      const submissionDoc = await getDoc(doc(db, "meal_submissions", selectedDate));
-      setIsSubmittedForDate(submissionDoc.exists());
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Failed to load meal data");
@@ -188,6 +178,30 @@ export default function MealsPage() {
     });
   };
 
+  const setPresetMeals = (userId: string, preset: 0 | 1 | 2 | 2.5) => {
+    if (preset === 0) {
+      setMeals((prev) => ({
+        ...prev,
+        [userId]: { ...prev[userId], breakfast: 0, lunch: 0, dinner: 0, totalMeals: 0 },
+      }));
+    } else if (preset === 1) {
+      setMeals((prev) => ({
+        ...prev,
+        [userId]: { ...prev[userId], breakfast: 0, lunch: 1, dinner: 0, totalMeals: 1 },
+      }));
+    } else if (preset === 2) {
+      setMeals((prev) => ({
+        ...prev,
+        [userId]: { ...prev[userId], breakfast: 0, lunch: 1, dinner: 1, totalMeals: 2 },
+      }));
+    } else if (preset === 2.5) {
+      setMeals((prev) => ({
+        ...prev,
+        [userId]: { ...prev[userId], breakfast: 0.5, lunch: 1, dinner: 1, totalMeals: 2.5 },
+      }));
+    }
+  };
+
   const handleSaveMeals = async () => {
     setSaving(true);
     try {
@@ -206,12 +220,6 @@ export default function MealsPage() {
         });
       }
 
-      await setDoc(doc(db, "meal_submissions", selectedDate), {
-        submittedAt: new Date().toISOString(),
-        submittedBy: profile?.id,
-      });
-
-      setIsSubmittedForDate(true);
       await logActivity(
         profile?.id || "unknown",
         profile?.name || "Unknown",
@@ -288,14 +296,6 @@ export default function MealsPage() {
         spenderName: spender?.name || "Unknown",
       });
 
-      await logActivity(
-        profile?.id || "unknown",
-        profile?.name || "Unknown",
-        "UPDATED_BAZAR",
-        `Updated bazar entry to ৳${amountNum} spent by ${spender?.name || "Unknown"}`,
-        "bazar"
-      );
-
       toast.success("Bazar entry updated!");
       setEditingBazar(null);
     } catch (error) {
@@ -311,13 +311,6 @@ export default function MealsPage() {
     setSaving(true);
     try {
       await deleteDoc(doc(db, "bazar_costs", id));
-      await logActivity(
-        profile?.id || "unknown",
-        profile?.name || "Unknown",
-        "DELETED_BAZAR",
-        "Deleted a bazar cost entry",
-        "bazar"
-      );
       toast.success("Bazar entry deleted!");
     } catch (error) {
       console.error("Error deleting bazar:", error);
@@ -342,10 +335,10 @@ export default function MealsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
             <Utensils className="w-6 h-6 text-brand" />
-            Daily Meal & Bazar Management
+            Daily Meal Attendance (.5 / 1 / 1)
           </h1>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Log breakfast, lunch, and dinner per member and record bazar expenditures.
+            Sleek, compact meal tracking for members. Only assigned members enter calculation.
           </p>
         </div>
 
@@ -354,10 +347,10 @@ export default function MealsPage() {
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-44 text-xs font-semibold"
+            className="w-44 text-xs font-bold"
           />
           <Button variant="primary" size="sm" isLoading={saving} onClick={handleSaveMeals}>
-            <Save className="w-4 h-4 mr-1.5" /> Save Meals
+            <Save className="w-4 h-4 mr-1.5" /> Save Daily Meals
           </Button>
         </div>
       </motion.div>
@@ -367,95 +360,145 @@ export default function MealsPage() {
         <MealCutoffBanner />
       </motion.div>
 
-      {/* Main Grid: Meals Table Left, Bazar Form Right */}
+      {/* Grid Layout: Compact Left Meals Matrix, Right Bazar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Meals Table */}
-        <div className="lg:col-span-2 space-y-4">
-          <TableContainer>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead className="text-center">Breakfast (B)</TableHead>
-                  <TableHead className="text-center">Lunch (L)</TableHead>
-                  <TableHead className="text-center">Dinner (D)</TableHead>
-                  <TableHead className="text-center font-bold">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-zinc-400">
-                      Loading meals data...
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  users.map((user) => {
-                    const meal = meals[user.id] || { breakfast: 0, lunch: 0, dinner: 0, totalMeals: 0 };
+        {/* Left 2 Columns: Compact Member Meal Cards */}
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-500">
+              Active Members ({users.length}) — {selectedDate}
+            </span>
+            <span className="text-xs font-extrabold text-brand bg-brand/10 px-2.5 py-1 rounded-full">
+              Total Today: {totalDailyMeals} Meals
+            </span>
+          </div>
 
-                    return (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-semibold text-zinc-900 dark:text-zinc-100">
-                          {user.name}
-                          {user.id === profile?.id && <Badge variant="info" className="ml-2">You</Badge>}
-                        </TableCell>
+          {loading ? (
+            <div className="p-8 text-center text-xs text-zinc-400">Loading daily meals matrix...</div>
+          ) : users.length === 0 ? (
+            <div className="p-8 text-center text-xs text-zinc-400 bg-card rounded-xl border border-zinc-200 dark:border-zinc-800">
+              No members configured for meals. Go to Users page and assign "Member" role to members.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {users.map((user) => {
+                const meal = meals[user.id] || { breakfast: 0.5, lunch: 1, dinner: 1, totalMeals: 2.5 };
+                const isYou = user.id === profile?.id;
 
-                        {/* Breakfast */}
-                        <TableCell className="text-center">
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            value={meal.breakfast}
-                            onChange={(e) => handleMealChange(user.id, "breakfast", parseFloat(e.target.value))}
-                            className="w-16 rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-2 py-1 text-center text-xs font-bold focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                        </TableCell>
+                return (
+                  <motion.div
+                    key={user.id}
+                    variants={fadeIn}
+                    className="p-3.5 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-card shadow-xs hover:border-brand/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    {/* Member Name */}
+                    <div className="flex items-center space-x-3 min-w-[160px]">
+                      <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center font-black text-xs">
+                        {user.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{user.name}</span>
+                          {isYou && <Badge variant="info" className="text-[9px] px-1.5">You</Badge>}
+                        </div>
+                        <span className="text-[10px] text-zinc-400">Meal Member</span>
+                      </div>
+                    </div>
 
-                        {/* Lunch */}
-                        <TableCell className="text-center">
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            value={meal.lunch}
-                            onChange={(e) => handleMealChange(user.id, "lunch", parseFloat(e.target.value))}
-                            className="w-16 rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-2 py-1 text-center text-xs font-bold focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                        </TableCell>
+                    {/* Compact 3-Part Toggle: Breakfast (.5), Lunch (1), Dinner (1) */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Breakfast (.5) */}
+                      <button
+                        type="button"
+                        onClick={() => handleMealChange(user.id, "breakfast", meal.breakfast > 0 ? 0 : 0.5)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all border ${
+                          meal.breakfast > 0
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-400/40 shadow-xs"
+                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-transparent hover:text-zinc-600"
+                        }`}
+                      >
+                        B ({meal.breakfast})
+                      </button>
 
-                        {/* Dinner */}
-                        <TableCell className="text-center">
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            value={meal.dinner}
-                            onChange={(e) => handleMealChange(user.id, "dinner", parseFloat(e.target.value))}
-                            className="w-16 rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-2 py-1 text-center text-xs font-bold focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                        </TableCell>
+                      {/* Lunch (1) */}
+                      <button
+                        type="button"
+                        onClick={() => handleMealChange(user.id, "lunch", meal.lunch > 0 ? 0 : 1)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all border ${
+                          meal.lunch > 0
+                            ? "bg-brand/15 text-brand border-brand/40 shadow-xs"
+                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-transparent hover:text-zinc-600"
+                        }`}
+                      >
+                        L ({meal.lunch})
+                      </button>
 
-                        {/* Total */}
-                        <TableCell className="text-center font-extrabold text-sm text-brand">
-                          {meal.totalMeals || 0}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                      {/* Dinner (1) */}
+                      <button
+                        type="button"
+                        onClick={() => handleMealChange(user.id, "dinner", meal.dinner > 0 ? 0 : 1)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all border ${
+                          meal.dinner > 0
+                            ? "bg-brand/15 text-brand border-brand/40 shadow-xs"
+                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-transparent hover:text-zinc-600"
+                        }`}
+                      >
+                        D ({meal.dinner})
+                      </button>
+                    </div>
+
+                    {/* Presets & Total */}
+                    <div className="flex items-center space-x-2 self-end sm:self-auto">
+                      {/* Presets */}
+                      <div className="flex items-center space-x-1 bg-zinc-100 dark:bg-zinc-900/60 p-1 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setPresetMeals(user.id, 0)}
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                            meal.totalMeals === 0 ? "bg-red-500 text-white shadow-xs" : "text-zinc-500 hover:text-zinc-900"
+                          }`}
+                        >
+                          0
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPresetMeals(user.id, 2)}
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                            meal.totalMeals === 2 ? "bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900" : "text-zinc-500 hover:text-zinc-900"
+                          }`}
+                        >
+                          2.0
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPresetMeals(user.id, 2.5)}
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                            meal.totalMeals === 2.5 ? "bg-brand text-white shadow-xs" : "text-zinc-500 hover:text-zinc-900"
+                          }`}
+                        >
+                          2.5
+                        </button>
+                      </div>
+
+                      {/* Total Badge */}
+                      <span className="w-12 text-center font-black text-sm text-zinc-900 dark:text-zinc-100 tabular-nums">
+                        {meal.totalMeals}
+                      </span>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Right 1 Column: Bazar Entry & History */}
         <div className="space-y-6">
           {/* Add Bazar Form */}
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-card p-5 shadow-card space-y-4">
+          <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-card p-5 shadow-card space-y-4">
             <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-amberAccent-500" />
-              Add Bazar Cost ({selectedDate})
+              Add Daily Bazar Expenditure
             </h3>
 
             <form onSubmit={handleAddBazar} className="space-y-3">
@@ -464,7 +507,7 @@ export default function MealsPage() {
                 type="number"
                 step="1"
                 min="1"
-                placeholder="e.g. 500"
+                placeholder="e.g. 450"
                 value={bazarAmount}
                 onChange={(e) => setBazarAmount(e.target.value)}
                 required
@@ -473,7 +516,7 @@ export default function MealsPage() {
               <Input
                 label="Description (Optional)"
                 type="text"
-                placeholder="e.g. Chicken, Vegetables"
+                placeholder="e.g. Chicken, Vegetables, Rice"
                 value={bazarDesc}
                 onChange={(e) => setBazarDesc(e.target.value)}
               />
@@ -495,20 +538,20 @@ export default function MealsPage() {
               </Select>
 
               <Button type="submit" variant="amber" className="w-full mt-2" isLoading={saving}>
-                <Plus className="w-4 h-4 mr-1" /> Add Expenditure
+                <Plus className="w-4 h-4 mr-1" /> Add Bazar Cost
               </Button>
             </form>
           </div>
 
           {/* Bazar History List */}
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-card shadow-card overflow-hidden">
+          <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-card shadow-card overflow-hidden">
             <button
               onClick={() => setShowBazarHistory(!showBazarHistory)}
               className="w-full p-4 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/50 text-left"
             >
               <div>
-                <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Bazar History ({currentMonth})</h4>
-                <p className="text-[11px] text-zinc-500">Total: ৳{formatCurrency(totalBazarMonth)}</p>
+                <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Bazar Log ({currentMonth})</h4>
+                <p className="text-[11px] text-zinc-500 font-semibold">Total Spent: ৳{formatCurrency(totalBazarMonth)}</p>
               </div>
               {showBazarHistory ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
             </button>
@@ -531,7 +574,7 @@ export default function MealsPage() {
                         </div>
                         <div className="flex items-center space-x-2">
                           <span className="font-extrabold text-amberAccent-600">৳{formatCurrency(entry.amount)}</span>
-                          {(profile?.role === "admin" || profile?.role === "moderator") && (
+                          {(profile?.role === "admin" || profile?.role === "super_admin" || profile?.role === "moderator") && (
                             <div className="flex items-center space-x-1">
                               <button onClick={() => handleEditBazar(entry)} className="p-1 text-blue-500 hover:bg-blue-50 rounded">
                                 <Edit3 className="w-3.5 h-3.5" />

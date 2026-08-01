@@ -13,18 +13,20 @@ import {
   Settings,
   CreditCard,
   Building,
+  Crown,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { format, startOfMonth } from "date-fns";
+import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { StatCard } from "@/components/ui/stat-card";
 import { Button } from "@/components/ui/button";
 import { MealCalendarHeatmap } from "@/components/dashboard/MealCalendarHeatmap";
 import { AdminAttentionPanel, type AttentionItem } from "@/components/dashboard/AdminAttentionPanel";
 import { calculateLedger } from "@/lib/calculations";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getMonthStr } from "@/lib/utils";
+import { getRoleTheme } from "@/lib/theme";
 import { staggerContainer, fadeIn } from "@/lib/motion";
 
 export default function Dashboard() {
@@ -39,6 +41,9 @@ export default function Dashboard() {
   const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const roleTheme = getRoleTheme(profile?.role);
+  const isManagement = profile?.role === "super_admin" || profile?.role === "admin" || profile?.role === "moderator";
+
   useEffect(() => {
     fetchDashboardData();
   }, [profile]);
@@ -48,14 +53,16 @@ export default function Dashboard() {
     try {
       const currentMonth = format(new Date(), "yyyy-MM");
 
-      // 1. Fetch Users
+      // 1. Fetch Users (ONLY role === 'member' for meal calculations)
       const usersSnap = await getDocs(collection(db, "users"));
-      const usersList: { id: string; name: string; role: string }[] = [];
+      const usersList: { id: string; name: string }[] = [];
       let pendingUsersCount = 0;
 
       usersSnap.forEach((d) => {
         const data = d.data();
-        usersList.push({ id: d.id, name: data.name || "Member", role: data.role || "visitor" });
+        if (data.role === "member") {
+          usersList.push({ id: d.id, name: data.name || "Member" });
+        }
         if (data.role === "pending" || data.role === "visitor") {
           pendingUsersCount++;
         }
@@ -70,7 +77,9 @@ export default function Dashboard() {
 
       mealsSnap.forEach((d) => {
         const data = d.data();
-        if (data.date && data.date.startsWith(currentMonth)) {
+        const mStr = getMonthStr(data.date || data.month);
+
+        if (mStr === currentMonth) {
           const total = Number(data.count || data.totalMeals || 0);
           userMeals[data.userId] = (userMeals[data.userId] || 0) + total;
 
@@ -93,7 +102,8 @@ export default function Dashboard() {
       const userFines: Record<string, number> = {};
       finesSnap.forEach((d) => {
         const data = d.data();
-        if (data.date && data.date.startsWith(currentMonth)) {
+        const mStr = getMonthStr(data.date || data.month);
+        if (mStr === currentMonth) {
           userFines[data.userId] = (userFines[data.userId] || 0) + Number(data.amount || 0);
         }
       });
@@ -104,11 +114,13 @@ export default function Dashboard() {
       let totalBazar = 0;
       bazarSnap.forEach((d) => {
         const data = d.data();
-        if (data.date && data.date.startsWith(currentMonth)) {
-          const amt = Number(data.amount || 0);
+        const mStr = getMonthStr(data.date || data.month);
+        if (mStr === currentMonth) {
+          const amt = Number(data.amount ?? data.cost ?? 0);
           totalBazar += amt;
-          if (data.spenderId) {
-            userBazarDeposits[data.spenderId] = (userBazarDeposits[data.spenderId] || 0) + amt;
+          const spenderId = data.spenderId || data.userId;
+          if (spenderId) {
+            userBazarDeposits[spenderId] = (userBazarDeposits[spenderId] || 0) + amt;
           }
         }
       });
@@ -118,12 +130,13 @@ export default function Dashboard() {
       const userDirectDeposits: Record<string, number> = {};
       paymentsSnap.forEach((d) => {
         const data = d.data();
-        if (data.date && (data.date.startsWith(currentMonth) || data.month === currentMonth)) {
+        const mStr = data.month || getMonthStr(data.date);
+        if (mStr === currentMonth) {
           userDirectDeposits[data.userId] = (userDirectDeposits[data.userId] || 0) + Number(data.amount || 0);
         }
       });
 
-      // Compute Ledger
+      // Compute Ledger Math
       const ledgerResult = calculateLedger({
         userMeals,
         userFines,
@@ -152,8 +165,8 @@ export default function Dashboard() {
         }
       }
 
-      // Attention items for Admin
-      if (profile?.role === "admin") {
+      // Attention items for Admin & Super Admin
+      if (isManagement) {
         const alerts: AttentionItem[] = [];
 
         if (pendingUsersCount > 0) {
@@ -162,7 +175,7 @@ export default function Dashboard() {
             type: "pending_user",
             title: "Pending Member Approvals",
             description: `${pendingUsersCount} new member(s) waiting for account approval.`,
-            actionText: "Review Members",
+            actionText: "Review Directory",
             actionHref: "/users",
           });
         }
@@ -179,7 +192,7 @@ export default function Dashboard() {
           });
         }
 
-        const activeMembersCount = usersList.filter((u) => u.role === "member" || u.role === "admin").length;
+        const activeMembersCount = usersList.length;
         if (loggedTodayCount < activeMembersCount) {
           alerts.push({
             id: "unlogged_meals",
@@ -201,11 +214,11 @@ export default function Dashboard() {
   };
 
   const quickLinks = [
-    { name: "Meals", href: "/meals", icon: Utensils, color: "bg-orange-500/10 text-orange-600" },
-    { name: "Ledger", href: "/ledger", icon: Calculator, color: "bg-blue-500/10 text-blue-600" },
-    { name: "Rent & Bills", href: "/rent", icon: Building, color: "bg-emerald-500/10 text-emerald-600" },
+    { name: "Meals (.5/1/1)", href: "/meals", icon: Utensils, color: "bg-orange-500/10 text-orange-600" },
+    { name: "Ledger Math", href: "/ledger", icon: Calculator, color: "bg-blue-500/10 text-blue-600" },
+    { name: "Rent & Utility", href: "/rent", icon: Building, color: "bg-emerald-500/10 text-emerald-600" },
     { name: "House Rules", href: "/rules", icon: Scale, color: "bg-red-500/10 text-red-600" },
-    { name: "Members", href: "/users", icon: Users, color: "bg-purple-500/10 text-purple-600" },
+    { name: "Member Directory", href: "/users", icon: Users, color: "bg-purple-500/10 text-purple-600" },
     { name: "Settings", href: "/settings", icon: Settings, color: "bg-zinc-500/10 text-zinc-600" },
   ];
 
@@ -219,13 +232,20 @@ export default function Dashboard() {
       {/* Header */}
       <motion.div variants={fadeIn} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Welcome back, {profile?.name || "Member"} 👋
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Welcome back, {profile?.name || "Member"} 👋
+            </h1>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] uppercase border ${roleTheme.badgeBg} ${roleTheme.badgeText} ${roleTheme.badgeBorder}`}>
+              {profile?.role === "super_admin" && <Crown className="w-3 h-3 text-amber-500" />}
+              {roleTheme.label}
+            </span>
+          </div>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Overview for {format(new Date(), "MMMM yyyy")}
+            Real-time mess overview for {format(new Date(), "MMMM yyyy")}
           </p>
         </div>
+
         <div className="flex items-center space-x-2">
           <Link href="/meals">
             <Button variant="primary" size="sm">
@@ -237,7 +257,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* Admin Attention Panel */}
-      {profile?.role === "admin" && (
+      {isManagement && (
         <motion.div variants={fadeIn}>
           <AdminAttentionPanel items={attentionItems} />
         </motion.div>
@@ -247,29 +267,31 @@ export default function Dashboard() {
       <motion.div variants={fadeIn} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Current Meal Rate"
-          value={`৳${stats.mealRate.toFixed(2)}`}
+          value={loading ? "..." : `৳${stats.mealRate.toFixed(2)}`}
           subtitle="Total Bazar / Total Meals"
           variant="brand"
           icon={<Calculator className="w-5 h-5 text-brand" />}
         />
         <StatCard
           title="Month-to-Date Bazar"
-          value={`৳${formatCurrency(stats.totalBazar)}`}
-          subtitle="Spent on mess supplies"
+          value={loading ? "..." : `৳${formatCurrency(stats.totalBazar)}`}
+          subtitle="Spent on mess food supplies"
           variant="amber"
           icon={<ShoppingBag className="w-5 h-5 text-amberAccent-500" />}
         />
         <StatCard
           title="Total Meals Eaten"
-          value={stats.totalMeals}
-          subtitle="Across all mess members"
+          value={loading ? "..." : stats.totalMeals}
+          subtitle="Across active meal members"
           variant="default"
           icon={<Utensils className="w-5 h-5 text-zinc-600" />}
         />
         <StatCard
           title="Personal Balance"
           value={
-            myBalance
+            loading
+              ? "..."
+              : myBalance
               ? `${myBalance.isDue ? "-" : "+"}৳${formatCurrency(myBalance.amount)}`
               : "৳0"
           }
@@ -287,8 +309,8 @@ export default function Dashboard() {
             <MealCalendarHeatmap mealEntries={mealEntries} />
           </motion.div>
 
-          <motion.div variants={fadeIn} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-card p-5 shadow-card">
-            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">Quick Actions</h3>
+          <motion.div variants={fadeIn} className="rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-card p-5 shadow-card">
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-4">Quick Navigation</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {quickLinks.map((item) => {
                 const IconComponent = item.icon;
@@ -309,29 +331,29 @@ export default function Dashboard() {
 
         {/* Right 1 Column: Information & Activity Link */}
         <motion.div variants={fadeIn} className="space-y-6">
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-card p-5 shadow-card space-y-4">
+          <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-card p-5 shadow-card space-y-4">
             <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-between">
-              <span>Mess Overview</span>
+              <span>Mess Operational Summary</span>
               <Activity className="w-4 h-4 text-brand" />
             </h3>
             <div className="space-y-3 text-xs text-zinc-600 dark:text-zinc-400 divide-y divide-zinc-100 dark:divide-zinc-800/60">
               <div className="pt-2 flex justify-between">
-                <span>Month</span>
+                <span>Active Period</span>
                 <span className="font-semibold text-zinc-900 dark:text-zinc-100">{format(new Date(), "MMMM yyyy")}</span>
               </div>
               <div className="pt-2 flex justify-between">
-                <span>Daily Cutoff Time</span>
+                <span>Daily Cutoff</span>
                 <span className="font-semibold text-amberAccent-600">10:00 PM</span>
               </div>
               <div className="pt-2 flex justify-between">
-                <span>Role</span>
-                <span className="font-semibold uppercase text-brand">{profile?.role || "Member"}</span>
+                <span>Your Role</span>
+                <span className={`font-extrabold uppercase ${roleTheme.headerAccent}`}>{roleTheme.label}</span>
               </div>
             </div>
             <Link href="/activity" className="block pt-2">
               <Button variant="outline" size="sm" className="w-full text-xs">
                 <Activity className="w-3.5 h-3.5 mr-1.5" />
-                View Full Audit Logs
+                View Audit History
               </Button>
             </Link>
           </div>
