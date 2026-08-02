@@ -371,7 +371,7 @@ export default function RentPage() {
                   <li key={user.id} className="py-4 flex flex-col gap-2 group">
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-3">
-                        <Avatar name={user.name} size={32} />
+                        <Avatar name={user.name} src={user.photoURL} size={32} />
                         <span className="text-gray-900 font-bold dark:text-white group-hover:text-indigo-600 transition-colors">{user.name}</span>
                       </div>
                       <div className="flex items-center gap-2">

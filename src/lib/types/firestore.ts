@@ -7,6 +7,7 @@ export interface UserProfile {
   name: string;
   email: string;
   role: UserRole;
+  photoURL?: string;
   phone?: string;
   roomNumber?: string;
   bKashNumber?: string;

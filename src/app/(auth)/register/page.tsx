@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createUserWithEmailAndPassword, signInWithPopup } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, googleProvider, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -56,11 +56,14 @@ export default function RegisterPage() {
         await setDoc(docRef, {
           name: user.displayName,
           email: user.email,
+          photoURL: user.photoURL || null,
           role: "pending",
           isPermanent: false,
           currentBalance: 0,
           createdAt: serverTimestamp(),
         });
+      } else if (user.photoURL && !docSnap.data()?.photoURL) {
+        await updateDoc(docRef, { photoURL: user.photoURL });
       }
 
       toast.success("Signed in with Google!");

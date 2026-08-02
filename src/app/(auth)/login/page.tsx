@@ -6,7 +6,7 @@ import { auth, googleProvider, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LogIn } from "lucide-react";
@@ -44,11 +44,14 @@ export default function LoginPage() {
         await setDoc(docRef, {
           name: user.displayName,
           email: user.email,
+          photoURL: user.photoURL || null,
           role: "visitor",
           isPermanent: false,
           currentBalance: 0,
           createdAt: serverTimestamp(),
         });
+      } else if (user.photoURL && !docSnap.data()?.photoURL) {
+        await updateDoc(docRef, { photoURL: user.photoURL });
       }
 
       toast.success("Signed in with Google!");

@@ -233,7 +233,7 @@ export default function MemberProfilePanel({ userId, onClose }: MemberProfilePan
               <div className="p-6 space-y-6">
                 {/* Profile Header */}
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700/50 flex items-center gap-5">
-                  <Avatar name={member.name} size={56} />
+                  <Avatar name={member.name} src={member.photoURL} size={56} />
                   <div className="min-w-0">
                     <h2 className="text-xl font-black text-gray-900 dark:text-white truncate">{member.name}</h2>
                     <div className="flex flex-wrap items-center gap-2 mt-1">

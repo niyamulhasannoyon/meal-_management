@@ -21,6 +21,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import MemberProfilePanel from "@/components/profile/MemberProfilePanel";
+import Avatar from "@/components/layout/Avatar";
 import { staggerContainer, fadeIn } from "@/lib/motion";
 
 export default function UsersPage() {
@@ -132,9 +133,12 @@ export default function UsersPage() {
                         className="font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer"
                         onClick={() => setSelectedUserId(user.id)}
                       >
-                        <div className="flex items-center gap-2">
-                          {user.name}
-                          {user.id === profile?.id && <Badge variant="info">You</Badge>}
+                        <div className="flex items-center gap-3">
+                          <Avatar name={user.name} src={user.photoURL} size={32} />
+                          <div className="flex items-center gap-2">
+                            {user.name}
+                            {user.id === profile?.id && <Badge variant="info">You</Badge>}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-zinc-500 dark:text-zinc-400 text-xs">

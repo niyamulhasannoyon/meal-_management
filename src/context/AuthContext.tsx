@@ -11,6 +11,7 @@ export interface UserProfile {
   name: string;
   email: string;
   role: UserRole;
+  photoURL?: string;
   isPermanent: boolean;
   currentBalance: number;
 }
@@ -115,11 +116,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 assignedRole = data.role === "super_admin" ? "super_admin" : "admin";
               }
 
+              if (currentUser.photoURL && !data.photoURL) {
+                updateDoc(docRef, { photoURL: currentUser.photoURL }).catch(() => {});
+              }
+
               setProfile({
                 id: currentUser.uid,
                 name: data.name || currentUser.displayName || "Unknown",
                 email: data.email || currentUser.email || "",
                 role: assignedRole,
+                photoURL: data.photoURL || currentUser.photoURL || undefined,
                 isPermanent: data.isPermanent || false,
                 currentBalance: data.currentBalance || 0,
               });
