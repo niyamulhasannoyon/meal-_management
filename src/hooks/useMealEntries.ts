@@ -44,14 +44,38 @@ export function useMealEntries(selectedDate: string) {
         mealsMap[data.userId] = { ...data, id: docSnap.id };
       });
 
-      // Populate defaults for missing members
+      // Query previous day's meals as default for missing members
+      const prevDateObj = new Date(`${selectedDate}T12:00:00`);
+      prevDateObj.setDate(prevDateObj.getDate() - 1);
+      const prevDateStr = format(prevDateObj, "yyyy-MM-dd");
+
+      const prevMealsQuery = query(mealsCol, where("date", "==", prevDateStr));
+      const prevMealsSnap = await getDocs(prevMealsQuery);
+      const prevMealsMap: Record<string, any> = {};
+      prevMealsSnap.forEach((docSnap) => {
+        const data = docSnap.data();
+        prevMealsMap[data.userId] = data;
+      });
+
+      // Populate defaults for missing members using previous day's values
       activeMembers.forEach((u) => {
         if (!mealsMap[u.id]) {
+          const prevEntry = prevMealsMap[u.id];
+          const defaultCount = prevEntry
+            ? Number(
+                prevEntry.count !== undefined
+                  ? prevEntry.count
+                  : prevEntry.totalMeals !== undefined
+                  ? prevEntry.totalMeals
+                  : (prevEntry.breakfast || 0) + (prevEntry.lunch || 0) + (prevEntry.dinner || 0)
+              )
+            : 2;
+
           mealsMap[u.id] = {
             userId: u.id,
             userName: u.name,
             date: selectedDate,
-            count: 2, // Default 2 meals
+            count: defaultCount,
             month: selectedDate.substring(0, 7),
           };
         }

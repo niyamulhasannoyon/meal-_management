@@ -135,20 +135,55 @@ export default function MealsPage() {
         mealsMap[data.userId] = { ...data, id: d.id };
       });
 
+      // Query previous day's meals as default for missing members
+      const prevDateObj = new Date(`${selectedDate}T12:00:00`);
+      prevDateObj.setDate(prevDateObj.getDate() - 1);
+      const prevDateStr = format(prevDateObj, "yyyy-MM-dd");
+
+      const prevMealsQuery = query(collection(db, "meals"), where("date", "==", prevDateStr));
+      const prevMealsSnap = await getDocs(prevMealsQuery);
+      const prevMealsMap: Record<string, MealEntry> = {};
+      prevMealsSnap.forEach((d) => {
+        const data = d.data() as MealEntry;
+        prevMealsMap[data.userId] = data;
+      });
+
       const defaultB = settings?.defaultBreakfast !== undefined ? settings.defaultBreakfast : 0.5;
       const defaultL = settings?.defaultLunch !== undefined ? settings.defaultLunch : 1.0;
       const defaultD = settings?.defaultDinner !== undefined ? settings.defaultDinner : 1.0;
 
       activeMembers.forEach((user) => {
         if (!mealsMap[user.id]) {
-          mealsMap[user.id] = {
-            userId: user.id,
-            date: selectedDate,
-            breakfast: defaultB,
-            lunch: defaultL,
-            dinner: defaultD,
-            totalMeals: defaultB + defaultL + defaultD,
-          };
+          const prevEntry = prevMealsMap[user.id];
+          if (prevEntry) {
+            const b = prevEntry.breakfast !== undefined ? Number(prevEntry.breakfast) : defaultB;
+            const l = prevEntry.lunch !== undefined ? Number(prevEntry.lunch) : defaultL;
+            const d = prevEntry.dinner !== undefined ? Number(prevEntry.dinner) : defaultD;
+            const tot =
+              prevEntry.totalMeals !== undefined
+                ? Number(prevEntry.totalMeals)
+                : (prevEntry as any).count !== undefined
+                ? Number((prevEntry as any).count)
+                : b + l + d;
+
+            mealsMap[user.id] = {
+              userId: user.id,
+              date: selectedDate,
+              breakfast: b,
+              lunch: l,
+              dinner: d,
+              totalMeals: tot,
+            };
+          } else {
+            mealsMap[user.id] = {
+              userId: user.id,
+              date: selectedDate,
+              breakfast: defaultB,
+              lunch: defaultL,
+              dinner: defaultD,
+              totalMeals: defaultB + defaultL + defaultD,
+            };
+          }
         }
       });
 
