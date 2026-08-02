@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { calculateLedger, CalculationResult } from "@/lib/calculations";
 import { useAuth } from "@/context/AuthContext";
 import { logActivity } from "@/lib/activityLogger";
-import { getMonthStr, sortUsers } from "@/lib/utils";
+import { getMonthStr, getDateStr, sortUsers } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 export function useMonthlyLedger(targetMonth?: string) {
@@ -34,12 +34,24 @@ export function useMonthlyLedger(targetMonth?: string) {
 
       usersSnap.forEach((d) => {
         const u = d.data();
-        // ONLY users with role === 'member' are included in meal calculations
-        if (u.role === "member") {
+        // Include all active mess residents (member, admin, super_admin, moderator)
+        const role = u.role || "member";
+        if (role !== "visitor" && role !== "pending") {
           usersList.push({ id: d.id, name: u.name || "Member" });
           activeMemberIds.push(d.id);
         }
       });
+
+      // Helper function to check if an entry date predates systemStartDate
+      const isBeforeSystemStart = (dateVal: any) => {
+        if (!systemStartDate) return false;
+        const dStr = getDateStr(dateVal);
+        if (!dStr) return false;
+        const systemStartMonth = getMonthStr(systemStartDate);
+        // If systemStartDate is in a future month compared to target month, don't filter out target month records
+        if (systemStartMonth > month) return false;
+        return dStr < systemStartDate;
+      };
 
       // 2. Check if month is already closed in monthly_ledgers
       const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", month));
@@ -87,8 +99,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         if (mStr) foundMonths.add(mStr);
 
         if (mStr === month) {
-          const dStr = typeof m.date === "string" ? m.date : "";
-          if (!systemStartDate || !dStr || dStr >= systemStartDate) {
+          if (!isBeforeSystemStart(m.date || m.createdAt)) {
             const count = Number(
               m.count !== undefined
                 ? m.count
@@ -110,8 +121,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         if (fMonth) foundMonths.add(fMonth);
 
         if (fMonth === month) {
-          const dStr = typeof f.date === "string" ? f.date : "";
-          if (!systemStartDate || !dStr || dStr >= systemStartDate) {
+          if (!isBeforeSystemStart(f.date || f.createdAt)) {
             userFines[f.userId] = (userFines[f.userId] || 0) + Number(f.amount || 0);
           }
         }
@@ -128,8 +138,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         if (bMonth) foundMonths.add(bMonth);
 
         if (bMonth === month) {
-          const dStr = typeof b.date === "string" ? b.date : "";
-          if (!systemStartDate || !dStr || dStr >= systemStartDate) {
+          if (!isBeforeSystemStart(b.date || b.createdAt)) {
             const amt = Number(b.amount ?? b.cost ?? 0);
             totalBazar += amt;
             const spenderId = b.spenderId || b.userId;
@@ -146,12 +155,11 @@ export function useMonthlyLedger(targetMonth?: string) {
 
       paymentsSnap.forEach((d) => {
         const p = d.data();
-        const pMonth = p.month || getMonthStr(p.date || p.createdAt);
+        const pMonth = getMonthStr(p.date || p.month || p.createdAt);
         if (pMonth) foundMonths.add(pMonth);
 
         if (pMonth === month) {
-          const dStr = typeof p.date === "string" ? p.date : "";
-          if (!systemStartDate || !dStr || dStr >= systemStartDate) {
+          if (!isBeforeSystemStart(p.date || p.createdAt)) {
             userDirectDeposits[p.userId] = (userDirectDeposits[p.userId] || 0) + Number(p.amount || 0);
           }
         }

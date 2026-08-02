@@ -30,17 +30,41 @@ export interface DateLikeObj {
 
 export const getMonthStr = (dateVal: DateLikeObj | Date | string | number | null | undefined): string => {
   if (!dateVal) return "";
-  if (typeof dateVal === "string") {
-    return dateVal.length >= 7 ? dateVal.substring(0, 7) : dateVal;
-  }
-  if (typeof dateVal === "object" && dateVal !== null && "toDate" in dateVal && typeof dateVal.toDate === "function") {
-    return format(dateVal.toDate(), "yyyy-MM");
-  }
+
   if (dateVal instanceof Date) {
-    return format(dateVal, "yyyy-MM");
+    return isNaN(dateVal.getTime()) ? "" : format(dateVal, "yyyy-MM");
   }
+
+  if (typeof dateVal === "object" && dateVal !== null) {
+    const obj = dateVal as DateLikeObj;
+    if (typeof obj.toDate === "function") {
+      return format(obj.toDate(), "yyyy-MM");
+    }
+    if (typeof obj.seconds === "number") {
+      return format(new Date(obj.seconds * 1000), "yyyy-MM");
+    }
+  }
+
+  if (typeof dateVal === "string") {
+    const trimmed = dateVal.trim();
+    // Standard YYYY-MM
+    if (/^\d{4}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    // YYYY-M or YYYY-M-D
+    const parts = trimmed.split(/[-/T]/);
+    if (parts.length >= 2 && parts[0].length === 4) {
+      const year = parts[0];
+      const month = parts[1].padStart(2, "0");
+      if (!isNaN(Number(year)) && !isNaN(Number(month))) {
+        return `${year}-${month}`;
+      }
+    }
+  }
+
   try {
-    return format(new Date(dateVal as string | number), "yyyy-MM");
+    const d = new Date(dateVal as string | number);
+    return isNaN(d.getTime()) ? "" : format(d, "yyyy-MM");
   } catch {
     return "";
   }
@@ -48,17 +72,41 @@ export const getMonthStr = (dateVal: DateLikeObj | Date | string | number | null
 
 export const getDateStr = (dateVal: DateLikeObj | Date | string | number | null | undefined): string => {
   if (!dateVal) return "";
-  if (typeof dateVal === "string") {
-    return dateVal.length >= 10 ? dateVal.substring(0, 10) : dateVal;
-  }
-  if (typeof dateVal === "object" && dateVal !== null && "toDate" in dateVal && typeof dateVal.toDate === "function") {
-    return format(dateVal.toDate(), "yyyy-MM-dd");
-  }
+
   if (dateVal instanceof Date) {
-    return format(dateVal, "yyyy-MM-dd");
+    return isNaN(dateVal.getTime()) ? "" : format(dateVal, "yyyy-MM-dd");
   }
+
+  if (typeof dateVal === "object" && dateVal !== null) {
+    const obj = dateVal as DateLikeObj;
+    if (typeof obj.toDate === "function") {
+      return format(obj.toDate(), "yyyy-MM-dd");
+    }
+    if (typeof obj.seconds === "number") {
+      return format(new Date(obj.seconds * 1000), "yyyy-MM-dd");
+    }
+  }
+
+  if (typeof dateVal === "string") {
+    const trimmed = dateVal.trim();
+    // Standard YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    const parts = trimmed.split(/[-/T]/);
+    if (parts.length >= 3 && parts[0].length === 4) {
+      const year = parts[0];
+      const month = parts[1].padStart(2, "0");
+      const day = parts[2].padStart(2, "0");
+      if (!isNaN(Number(year)) && !isNaN(Number(month)) && !isNaN(Number(day))) {
+        return `${year}-${month}-${day}`;
+      }
+    }
+  }
+
   try {
-    return format(new Date(dateVal as string | number), "yyyy-MM-dd");
+    const d = new Date(dateVal as string | number);
+    return isNaN(d.getTime()) ? "" : format(d, "yyyy-MM-dd");
   } catch {
     return "";
   }

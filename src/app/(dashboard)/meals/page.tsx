@@ -118,8 +118,8 @@ export default function MealsPage() {
       const usersData: UserProfile[] = [];
       usersSnap.forEach((docSnap) => {
         const data = docSnap.data();
-        // ONLY include users with role === 'member'
-        if (data.role === "member") {
+        const role = data.role || "member";
+        if (role !== "visitor" && role !== "pending") {
           usersData.push({ id: docSnap.id, ...data } as UserProfile);
         }
       });
