@@ -34,9 +34,8 @@ export function useMonthlyLedger(targetMonth?: string) {
 
       usersSnap.forEach((d) => {
         const u = d.data();
-        // Include all active mess residents (member, admin, super_admin, moderator)
-        const role = u.role || "member";
-        if (role !== "visitor" && role !== "pending") {
+        // ONLY users set as 'Member (Eats Meals)' (role === 'member') are included in meal calculations
+        if (u.role === "member") {
           usersList.push({ id: d.id, name: u.name || "Member" });
           activeMemberIds.push(d.id);
         }
