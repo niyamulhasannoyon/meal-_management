@@ -31,7 +31,9 @@ export function useMealEntries(selectedDate: string) {
         const data = docSnap.data();
         usersData.push({ ...data, id: docSnap.id } as UserProfile);
       });
-      const activeMembers = sortUsers(usersData.filter((u) => u.role === "member"));
+      const activeMembers = sortUsers(
+        usersData.filter((u) => u.role !== "pending" && u.role !== "visitor")
+      );
       setUsers(activeMembers);
 
       // 2. Fetch Meals for selectedDate

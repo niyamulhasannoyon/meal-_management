@@ -34,12 +34,14 @@ export function useMonthlyLedger(targetMonth?: string) {
 
       usersSnap.forEach((d) => {
         const u = d.data();
-        // ONLY users set as 'Member (Eats Meals)' (role === 'member') are included in meal calculations
-        if (u.role === "member") {
+        const role = u.role || "member";
+        // All active members (non-pending, non-visitor) are included in meal calculations
+        if (role !== "pending" && role !== "visitor") {
           usersList.push({ id: d.id, name: u.name || "Member" });
           activeMemberIds.push(d.id);
         }
       });
+      const sortedUsersList = sortUsers(usersList);
 
       // Helper function to check if an entry date predates systemStartDate
       const isBeforeSystemStart = (dateVal: any) => {
@@ -181,7 +183,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         userDirectDeposits,
         userBazarDeposits,
         totalBazar,
-        users: usersList,
+        users: sortedUsersList,
       });
 
       setLedgerResult(result);

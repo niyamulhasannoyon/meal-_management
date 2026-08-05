@@ -23,6 +23,8 @@ import { formatCurrency, getMonthStr } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
 import { motion, AnimatePresence } from "framer-motion";
 
+import { useMonthlyLedger } from "@/hooks/useMonthlyLedger";
+
 function safeParseDate(val: unknown): Date {
   if (!val) return new Date();
   if (typeof val === "object" && val !== null && "toDate" in val && typeof (val as { toDate?: Function }).toDate === "function") {
@@ -48,10 +50,17 @@ interface MealEntry {
   id: string;
   userId: string;
   date: string;
-  breakfast: number;
-  lunch: number;
-  dinner: number;
-  totalMeals: number;
+  breakfast?: number;
+  lunch?: number;
+  dinner?: number;
+  totalMeals?: number;
+  count?: number;
+}
+
+function getMealCount(meal: MealEntry): number {
+  if (meal.count !== undefined) return Number(meal.count) || 0;
+  if (meal.totalMeals !== undefined) return Number(meal.totalMeals) || 0;
+  return (Number(meal.breakfast) || 0) + (Number(meal.lunch) || 0) + (Number(meal.dinner) || 0);
 }
 
 interface PaymentEntry {
@@ -87,10 +96,10 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
   const [meals, setMeals] = useState<MealEntry[]>([]);
   const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [bazarContributions, setBazarContributions] = useState<BazarEntry[]>([]);
-  
-  const [mealRateMap, setMealRateMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
-  const [loadingRate, setLoadingRate] = useState(false);
+
+  // Sync with official monthly ledger calculation engine
+  const { ledgerResult, loading: loadingLedger, availableMonths: ledgerMonths } = useMonthlyLedger(selectedMonth);
 
   // Sync initial month if prop changes when opening
   useEffect(() => {
@@ -104,14 +113,6 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
     if (!userId) return;
     fetchMemberData();
   }, [userId]);
-
-  // Fetch meal rate when selectedMonth changes
-  useEffect(() => {
-    if (!userId || !selectedMonth) return;
-    if (mealRateMap[selectedMonth] === undefined) {
-      fetchMealRateForMonth(selectedMonth);
-    }
-  }, [selectedMonth, userId]);
 
   const fetchMemberData = async () => {
     if (!userId) return;
@@ -175,74 +176,9 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
     }
   };
 
-  const fetchMealRateForMonth = async (monthStr: string) => {
-    setLoadingRate(true);
-    try {
-      // Check closed ledger document first
-      const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", monthStr));
-      if (ledgerDoc.exists()) {
-        const ledgerData = ledgerDoc.data();
-        const rate = Number(ledgerData.mealRate ?? ledgerData.calculatedMealRate ?? 0);
-        setMealRateMap(prev => ({ ...prev, [monthStr]: rate }));
-        return;
-      }
-
-      // If open/current month, calculate rate on-the-fly
-      const usersSnap = await getDocs(collection(db, "users"));
-      const activeMemberIds = new Set<string>();
-      usersSnap.forEach((d) => {
-        if (d.data().role === "member") activeMemberIds.add(d.id);
-      });
-
-      const bazarSnap = await getDocs(collection(db, "bazar_costs"));
-      let totalBazar = 0;
-      bazarSnap.forEach(d => {
-        const data = d.data();
-        const m = getMonthStr((data.date || data.month || data.createdAt) as any);
-        if (m === monthStr) {
-          totalBazar += Number(data.amount || data.cost || 0);
-        }
-      });
-
-      const mealsSnap = await getDocs(collection(db, "meals"));
-      let totalMeals = 0;
-      mealsSnap.forEach(d => {
-        const data = d.data();
-        const m = getMonthStr((data.date || data.month || data.createdAt) as any);
-        if (m === monthStr && activeMemberIds.has(data.userId)) {
-          const count = Number(
-            data.count !== undefined
-              ? data.count
-              : data.totalMeals !== undefined
-              ? data.totalMeals
-              : (data.breakfast || 0) + (data.lunch || 0) + (data.dinner || 0)
-          );
-          totalMeals += count;
-        }
-      });
-
-      const finesSnap = await getDocs(collection(db, "fines"));
-      finesSnap.forEach(d => {
-        const data = d.data();
-        const m = getMonthStr((data.date || data.month || data.createdAt) as any);
-        if (m === monthStr && activeMemberIds.has(data.userId)) {
-          totalMeals += Number(data.amount || 0);
-        }
-      });
-
-      const calculatedRate = totalMeals > 0 ? totalBazar / totalMeals : 0;
-      setMealRateMap(prev => ({ ...prev, [monthStr]: calculatedRate }));
-    } catch (err) {
-      console.error("Error computing meal rate for month:", monthStr, err);
-      setMealRateMap(prev => ({ ...prev, [monthStr]: 0 }));
-    } finally {
-      setLoadingRate(false);
-    }
-  };
-
   // Build available month options list
   const availableMonths = useMemo(() => {
-    const setM = new Set<string>();
+    const setM = new Set<string>(ledgerMonths || []);
     setM.add(runningMonth);
     if (initialMonth) setM.add(initialMonth);
 
@@ -266,7 +202,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
     }
 
     return Array.from(setM).sort().reverse();
-  }, [meals, payments, bazarContributions, runningMonth, initialMonth]);
+  }, [ledgerMonths, meals, payments, bazarContributions, runningMonth, initialMonth]);
 
   // Filtered data for selected month
   const filteredMeals = useMemo(() => {
@@ -281,13 +217,20 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
     return bazarContributions.filter(b => getMonthStr(b.date as any) === selectedMonth);
   }, [bazarContributions, selectedMonth]);
 
-  // Calculate totals for selected month
-  const totalMealsEaten = filteredMeals.reduce((sum, m) => sum + (Number(m.totalMeals) || 0), 0);
-  const bazarContributed = filteredBazar.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+  // Read official calculations from ledgerResult
+  const userCalc = ledgerResult?.users.find((u) => u.id === userId);
+  const currentMealRate = ledgerResult?.mealRate ?? 0;
 
-  const currentMealRate = mealRateMap[selectedMonth] || 0;
-  const estimatedMealCost = totalMealsEaten * currentMealRate;
-  const balance = bazarContributed - estimatedMealCost;
+  // Compute daily meals count sum
+  const detailedMealsSum = filteredMeals.reduce((sum, m) => sum + getMealCount(m), 0);
+  const totalMealsEaten = userCalc ? userCalc.totalMeals : detailedMealsSum;
+  const estimatedMealCost = userCalc ? userCalc.mealCost : totalMealsEaten * currentMealRate;
+
+  const directPaymentsTotal = filteredPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const bazarContributed = filteredBazar.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+  const totalDeposits = userCalc ? userCalc.deposits : (directPaymentsTotal + bazarContributed);
+  const balance = userCalc ? userCalc.balance : (totalDeposits - estimatedMealCost);
+
   const isDue = balance < 0;
   const isExtra = balance > 0;
 
@@ -478,7 +421,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                       <div className="mt-2">
                         <span className="text-2xl font-black text-zinc-900 dark:text-white">{totalMealsEaten}</span>
                         <p className="text-[10px] text-zinc-400 mt-0.5">
-                          Rate: {loadingRate ? "..." : `৳${currentMealRate.toFixed(2)}/meal`}
+                          Rate: {loadingLedger ? "..." : `৳${currentMealRate.toFixed(2)}/meal`}
                         </p>
                       </div>
                     </div>
@@ -499,17 +442,19 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                       </div>
                     </div>
 
-                    {/* Bazar Cost */}
+                    {/* Total Deposits (Direct Payments + Bazar) */}
                     <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                       <div className="flex items-center justify-between text-zinc-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider">Bazar Cost</span>
-                        <ShoppingCart className="w-4 h-4 text-amber-500" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Total Deposits</span>
+                        <Wallet className="w-4 h-4 text-emerald-500" />
                       </div>
                       <div className="mt-2">
-                        <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
-                          ৳{formatCurrency(bazarContributed)}
+                        <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                          ৳{formatCurrency(Math.round(totalDeposits))}
                         </span>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">{filteredBazar.length} entries</p>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                          Bazar: ৳{formatCurrency(bazarContributed)} | Cash: ৳{formatCurrency(directPaymentsTotal)}
+                        </p>
                       </div>
                     </div>
 
@@ -544,7 +489,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                             : "Settled"}
                         </span>
                         <p className="text-[10px] text-zinc-400 mt-0.5">
-                          Bazar - Meal Cost
+                          Deposits - Meal Cost
                         </p>
                       </div>
                     </div>
@@ -584,11 +529,11 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                                 <td className="px-4 py-2 text-[11px] font-semibold text-zinc-900 dark:text-white">
                                   {meal.date ? format(safeParseDate(meal.date), "MMM dd, yyyy") : "-"}
                                 </td>
-                                <td className="px-4 py-2 text-center text-[11px] text-zinc-600 dark:text-zinc-400">{meal.breakfast || "-"}</td>
-                                <td className="px-4 py-2 text-center text-[11px] text-zinc-600 dark:text-zinc-400">{meal.lunch || "-"}</td>
-                                <td className="px-4 py-2 text-center text-[11px] text-zinc-600 dark:text-zinc-400">{meal.dinner || "-"}</td>
+                                <td className="px-4 py-2 text-center text-[11px] text-zinc-600 dark:text-zinc-400">{meal.breakfast !== undefined ? meal.breakfast : "-"}</td>
+                                <td className="px-4 py-2 text-center text-[11px] text-zinc-600 dark:text-zinc-400">{meal.lunch !== undefined ? meal.lunch : "-"}</td>
+                                <td className="px-4 py-2 text-center text-[11px] text-zinc-600 dark:text-zinc-400">{meal.dinner !== undefined ? meal.dinner : "-"}</td>
                                 <td className="px-4 py-2 text-center text-[11px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/30">
-                                  {meal.totalMeals}
+                                  {getMealCount(meal)}
                                 </td>
                               </tr>
                             ))}

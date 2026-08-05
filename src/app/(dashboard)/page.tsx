@@ -60,10 +60,10 @@ export default function Dashboard() {
 
       usersSnap.forEach((d) => {
         const data = d.data();
-        if (data.role === "member") {
+        const role = data.role || "member";
+        if (role !== "pending" && role !== "visitor") {
           usersList.push({ id: d.id, name: data.name || "Member" });
-        }
-        if (data.role === "pending" || data.role === "visitor") {
+        } else {
           pendingUsersCount++;
         }
       });
