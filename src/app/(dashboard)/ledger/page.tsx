@@ -97,6 +97,7 @@ export default function LedgerPage() {
       const list: PaymentItem[] = [];
       paySnap.forEach((d) => {
         const data = d.data();
+        if (data.paymentFor === "rent") return;
         const mStr = pMonth(data);
         if (mStr === month) {
           list.push({

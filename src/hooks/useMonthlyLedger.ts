@@ -148,12 +148,15 @@ export function useMonthlyLedger(targetMonth?: string) {
         }
       });
 
-      // Fetch direct payments / deposits
+      // Fetch direct payments / deposits (excluding rent payments)
       const paymentsSnap = await getDocs(collection(db, "payments"));
       const userDirectDeposits: Record<string, number> = {};
 
       paymentsSnap.forEach((d) => {
         const p = d.data();
+        // Skip payments designated for house rent
+        if (p.paymentFor === "rent") return;
+
         const pMonth = getMonthStr(p.date || p.month || p.createdAt);
         if (pMonth) foundMonths.add(pMonth);
 

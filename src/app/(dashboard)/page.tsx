@@ -125,11 +125,12 @@ export default function Dashboard() {
         }
       });
 
-      // 5. Fetch Direct Payments for current month
+      // 5. Fetch Direct Payments for current month (excluding rent)
       const paymentsSnap = await getDocs(collection(db, "payments"));
       const userDirectDeposits: Record<string, number> = {};
       paymentsSnap.forEach((d) => {
         const data = d.data();
+        if (data.paymentFor === "rent") return;
         const mStr = data.month || getMonthStr(data.date);
         if (mStr === currentMonth) {
           userDirectDeposits[data.userId] = (userDirectDeposits[data.userId] || 0) + Number(data.amount || 0);
