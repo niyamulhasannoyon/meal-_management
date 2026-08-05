@@ -7,6 +7,7 @@ import { useAuth, UserProfile } from "@/context/AuthContext";
 import { format } from "date-fns";
 import { Scale, Plus, Trash2, Edit2, AlertCircle } from "lucide-react";
 import { logActivity } from "@/lib/activityLogger";
+import { sortUsers } from "@/lib/utils";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -81,8 +82,13 @@ export default function RulesAndFinesPage() {
 
       const usersSnap = await getDocs(collection(db, "users"));
       const usersData: UserProfile[] = [];
-      usersSnap.forEach((docSnap) => usersData.push({ id: docSnap.id, ...docSnap.data() } as UserProfile));
-      setUsers(usersData);
+      usersSnap.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.role === "member") {
+          usersData.push({ id: docSnap.id, ...data } as UserProfile);
+        }
+      });
+      setUsers(sortUsers(usersData));
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
