@@ -56,10 +56,11 @@ interface PaymentItem {
 export default function LedgerPage() {
   const { profile, settings } = useAuth();
   const currencySymbol = settings?.currencySymbol || "৳";
-  const { month, setMonth, availableMonths, ledgerResult, loading, isClosed, closeMonth } = useMonthlyLedger();
+  const { month, setMonth, availableMonths, ledgerResult, loading, isClosed, closeMonth, reopenMonth } = useMonthlyLedger();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const isSuperAdmin = profile?.role === "super_admin";
 
   // Add Deposit Modal State
   const [showDepositModal, setShowDepositModal] = useState<string | null>(null);
@@ -276,23 +277,24 @@ export default function LedgerPage() {
             <Download className="w-4 h-4 mr-1" /> Export CSV
           </Button>
 
-          {profile?.role === "admin" && (
-            <Button
-              onClick={() => setShowCloseDialog(true)}
-              disabled={isClosed}
-              variant={isClosed ? "outline" : "danger"}
-              size="sm"
-            >
-              {isClosed ? (
-                <>
-                  <Lock className="w-4 h-4 mr-1.5" /> Month Closed
-                </>
-              ) : (
-                <>
-                  <Unlock className="w-4 h-4 mr-1.5" /> Close Month
-                </>
-              )}
-            </Button>
+          {isSuperAdmin && (
+            isClosed ? (
+              <Button
+                onClick={reopenMonth}
+                variant="amber"
+                size="sm"
+              >
+                <Unlock className="w-4 h-4 mr-1.5" /> Re-open Month (Super Admin)
+              </Button>
+            ) : (
+              <Button
+                onClick={() => setShowCloseDialog(true)}
+                variant="danger"
+                size="sm"
+              >
+                <Lock className="w-4 h-4 mr-1.5" /> Close Month (Super Admin)
+              </Button>
+            )
           )}
         </div>
       </motion.div>
@@ -512,7 +514,7 @@ export default function LedgerPage() {
                   </div>
                   <div className="flex items-center space-x-3">
                     <span className="font-extrabold text-emerald-600 dark:text-emerald-400">৳{formatCurrency(p.amount)}</span>
-                    {profile?.role === "admin" && (
+                    {isSuperAdmin && (
                       <Button
                         variant="ghost"
                         size="sm"

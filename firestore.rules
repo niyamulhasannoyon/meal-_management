@@ -17,8 +17,12 @@ service cloud.firestore {
         : 'visitor';
     }
 
+    function isSuperAdmin() {
+      return getRole() == 'super_admin';
+    }
+
     function isAdmin() {
-      return getRole() == 'admin';
+      return getRole() == 'admin' || getRole() == 'super_admin';
     }
 
     function isModerator() {
@@ -56,16 +60,17 @@ service cloud.firestore {
         && request.resource.data.isPermanent == false;
 
       allow update: if isAuthenticated() && (
-        // Admins can update anything
-        isAdmin()
-        // Moderators can toggle isPermanent status or approve pending accounts to visitor or member
+        // Super Admin can update anything (including roles)
+        isSuperAdmin()
+        // Admin can update users except changing role to super_admin or modifying roles if role control is super_admin only
+        || (isAdmin() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+        // Moderators can toggle isPermanent status
         || (isModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isPermanent']))
-        || (isModerator() && (resource.data.role == 'pending' || resource.data.role == 'visitor') && (request.resource.data.role == 'visitor' || request.resource.data.role == 'member') && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']))
         // Users can update their own name/email (but not role or balance)
         || (request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email']))
       );
 
-      allow delete: if isAuthenticated() && isAdmin();
+      allow delete: if isAuthenticated() && isSuperAdmin();
     }
 
     // 2. Meals collection rules
@@ -102,16 +107,16 @@ service cloud.firestore {
       allow write: if isAuthenticated() && isAdmin();
     }
 
-    // 7. Monthly Ledgers rules
+    // 7. Monthly Ledgers rules (Closing & Reopening strictly Super Admin)
     match /monthly_ledgers/{ledgerId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isAdmin();
+      allow write: if isAuthenticated() && isSuperAdmin();
     }
 
-    // 8. System Config / Settings rules
+    // 8. System Config / Settings rules (Strictly Super Admin)
     match /system_config/settings {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isAdmin();
+      allow write: if isAuthenticated() && isSuperAdmin();
     }
 
     // 9. Activity Logs rules

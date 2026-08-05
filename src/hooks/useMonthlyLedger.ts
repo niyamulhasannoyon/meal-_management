@@ -190,8 +190,8 @@ export function useMonthlyLedger(targetMonth?: string) {
   };
 
   const closeMonth = async () => {
-    if (profile?.role !== "admin") {
-      toast.error("Only admins can close monthly ledgers.");
+    if (profile?.role !== "super_admin") {
+      toast.error("Only Super Admin can close monthly ledgers.");
       return;
     }
     if (!ledgerResult) return;
@@ -240,6 +240,40 @@ export function useMonthlyLedger(targetMonth?: string) {
     }
   };
 
+  const reopenMonth = async () => {
+    if (profile?.role !== "super_admin") {
+      toast.error("Only Super Admin can re-open monthly ledgers.");
+      return;
+    }
+
+    try {
+      await setDoc(
+        doc(db, "monthly_ledgers", month),
+        {
+          closed: false,
+          isClosed: false,
+          reopenedAt: new Date().toISOString(),
+          reopenedBy: profile.id,
+        },
+        { merge: true }
+      );
+
+      await logActivity(
+        profile.id,
+        profile.name,
+        "REOPEN_LEDGER",
+        `Re-opened ledger for month ${month}`,
+        "system"
+      );
+
+      setIsClosed(false);
+      toast.success(`Ledger for ${month} re-opened successfully!`);
+    } catch (error) {
+      console.error("Error reopening ledger:", error);
+      toast.error("Failed to re-open ledger.");
+    }
+  };
+
   return {
     month,
     setMonth,
@@ -247,6 +281,8 @@ export function useMonthlyLedger(targetMonth?: string) {
     ledgerResult,
     loading,
     isClosed,
+    isSuperAdmin: profile?.role === "super_admin",
     closeMonth,
+    reopenMonth,
   };
 }

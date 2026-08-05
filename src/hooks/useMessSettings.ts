@@ -52,8 +52,8 @@ export function useMessSettings() {
   }, [settings]);
 
   const saveSettings = async (updatedSettings: Partial<MessSettings>) => {
-    if (profile?.role !== "admin") {
-      toast.error("Only admins can modify system settings.");
+    if (profile?.role !== "super_admin") {
+      toast.error("Only Super Admin can modify system settings.");
       return;
     }
     setSaving(true);
@@ -94,6 +94,7 @@ export function useMessSettings() {
     loading,
     saving,
     saveSettings,
-    isAdmin: profile?.role === "admin",
+    isSuperAdmin: profile?.role === "super_admin",
+    isAdmin: profile?.role === "super_admin" || profile?.role === "admin",
   };
 }

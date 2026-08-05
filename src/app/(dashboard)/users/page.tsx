@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Search, UserCheck, Shield, ShieldCheck, Trash2, Crown, Star } from "lucide-react";
+import { Users, Search, UserCheck, Shield, ShieldCheck, Trash2, Crown, Star, Lock } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useUsers } from "@/hooks/useUsers";
 import { getRoleTheme } from "@/lib/theme";
@@ -26,12 +26,10 @@ import { staggerContainer, fadeIn } from "@/lib/motion";
 
 export default function UsersPage() {
   const { profile } = useAuth();
-  const { users, loading, updating, canManage, handleApproveVisitor, handleRoleChange, handleTogglePermanent, handleDeleteUser } = useUsers();
+  const { users, loading, updating, isSuperAdmin, canManage, handleApproveVisitor, handleRoleChange, handleTogglePermanent, handleDeleteUser } = useUsers();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "meals" | "rent">("all");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-
-  const isSuperAdmin = profile?.role === "super_admin";
 
   const filteredUsers = users.filter((u) => {
     const matchesSearch =
@@ -59,12 +57,19 @@ export default function UsersPage() {
       {/* Header */}
       <motion.div variants={fadeIn} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-            <Users className="w-6 h-6 text-brand" />
-            Mess Member Directory & Role Control
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              <Users className="w-6 h-6 text-brand" />
+              Mess Member Directory & Role Control
+            </h1>
+            {isSuperAdmin && (
+              <Badge variant="warning" className="flex items-center gap-1 font-bold">
+                <Crown className="w-3.5 h-3.5 text-amber-500" /> Super Admin Grant Access Enabled
+              </Badge>
+            )}
+          </div>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Assign user roles (Super Admin, Admin, Moderator, Member, Visitor) and manage meal & rent permissions.
+            Grant user access, assign roles (Super Admin, Admin, Moderator, Member, Visitor), and manage meal & rent permissions.
           </p>
         </div>
 
@@ -77,6 +82,16 @@ export default function UsersPage() {
           />
         </div>
       </motion.div>
+
+      {!isSuperAdmin && (
+        <motion.div variants={fadeIn} className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-3">
+          <Crown className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-800 dark:text-amber-300">
+            <span className="font-bold block text-sm mb-0.5">Super Admin Permission Required</span>
+            Granting access to new members, updating user roles, and managing member access are exclusively reserved for the <strong>Super Admin</strong>.
+          </div>
+        </motion.div>
+      )}
 
       {/* Tabs Filter */}
       <motion.div variants={fadeIn} className="flex justify-between items-center border-b border-zinc-200 dark:border-zinc-800 pb-2">
@@ -158,7 +173,7 @@ export default function UsersPage() {
                         <Button
                           variant={user.isPermanent ? "amber" : "outline"}
                           size="sm"
-                          disabled={!canManage}
+                          disabled={!isSuperAdmin}
                           onClick={() => handleTogglePermanent(user.id, !!user.isPermanent)}
                         >
                           {user.isPermanent ? "Permanent" : "Non-permanent"}
@@ -167,32 +182,36 @@ export default function UsersPage() {
 
                       <TableCell className="text-right">
                         <div className="inline-flex items-center space-x-2">
-                          {isPending && canManage && (
+                          {isPending && isSuperAdmin && (
                             <Button
                               variant="amber"
                               size="sm"
                               isLoading={updating === user.id}
                               onClick={() => handleApproveVisitor(user.id, "member")}
                             >
-                              <UserCheck className="w-3.5 h-3.5 mr-1" /> Approve Member
+                              <UserCheck className="w-3.5 h-3.5 mr-1" /> Grant Access (Approve Member)
                             </Button>
                           )}
 
-                          {canManage && user.id !== profile?.id && (
+                          {isSuperAdmin && user.id !== profile?.id ? (
                             <Select
                               value={user.role}
                               onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                              className="w-32 text-xs py-1 px-2 font-bold"
+                              className="w-36 text-xs py-1 px-2 font-bold"
                             >
                               <option value="member">Member (Eats Meals)</option>
                               <option value="moderator">Moderator</option>
                               <option value="admin">Admin</option>
-                              {isSuperAdmin && <option value="super_admin">Super Admin</option>}
+                              <option value="super_admin">Super Admin</option>
                               <option value="visitor">Visitor</option>
                             </Select>
+                          ) : (
+                            !isSuperAdmin && (
+                              <span className="text-xs text-zinc-400 font-medium">Read Only</span>
+                            )
                           )}
 
-                          {canManage && user.id !== profile?.id && (
+                          {isSuperAdmin && user.id !== profile?.id && (
                             <Button
                               variant="ghost"
                               size="sm"

@@ -13,7 +13,9 @@ export function useUsers() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  const canManage = profile?.role === "super_admin" || profile?.role === "admin";
+  const isSuperAdmin = profile?.role === "super_admin";
+  const canManage = isSuperAdmin;
+  const canGrantAccess = isSuperAdmin;
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -40,8 +42,8 @@ export function useUsers() {
     userId: string,
     targetRole: UserRole = "member"
   ) => {
-    if (!canManage) {
-      return toast.error("Only admins can approve users");
+    if (!isSuperAdmin) {
+      return toast.error("Only Super Admin can grant access to users");
     }
     setUpdating(userId);
     try {
@@ -66,9 +68,8 @@ export function useUsers() {
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
-    if (!canManage) return toast.error("Only admins can change roles");
-    if (newRole === "super_admin" && profile?.role !== "super_admin") {
-      return toast.error("Only Super Admin can assign Super Admin role");
+    if (!isSuperAdmin) {
+      return toast.error("Only Super Admin can change user roles");
     }
 
     setUpdating(userId);
@@ -94,7 +95,9 @@ export function useUsers() {
   };
 
   const handleTogglePermanent = async (userId: string, currentStatus: boolean) => {
-    if (!canManage) return toast.error("Only admins can change permanent status");
+    if (!isSuperAdmin) {
+      return toast.error("Only Super Admin can change permanent member status");
+    }
     setUpdating(userId);
     try {
       await updateDoc(doc(db, "users", userId), { isPermanent: !currentStatus });
@@ -108,7 +111,9 @@ export function useUsers() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!canManage) return;
+    if (!isSuperAdmin) {
+      return toast.error("Only Super Admin can delete users");
+    }
     if (!confirm("Are you sure you want to delete this account?")) return;
 
     setUpdating(userId);
@@ -137,7 +142,9 @@ export function useUsers() {
     users,
     loading,
     updating,
+    isSuperAdmin,
     canManage,
+    canGrantAccess,
     handleApproveVisitor,
     handleRoleChange,
     handleTogglePermanent,

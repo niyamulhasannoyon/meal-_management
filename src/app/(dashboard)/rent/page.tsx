@@ -219,9 +219,11 @@ export default function RentPage() {
     }
   };
 
+  const isSuperAdmin = profile?.role === "super_admin";
+
   const handleCloseMonth = async () => {
-    if (!canManageRent) {
-      toast.error("Only admins can close rent calculations.");
+    if (!isSuperAdmin) {
+      toast.error("Only Super Admin can close rent calculations.");
       return;
     }
     if (!confirm(`Are you sure you want to CLOSE rent calculations for ${currentMonth}? No further edits will be allowed.`)) return;
@@ -243,6 +245,35 @@ export default function RentPage() {
     } catch (error) {
       console.error("Error closing month:", error);
       toast.error("Failed to close month.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReopenMonth = async () => {
+    if (!isSuperAdmin) {
+      toast.error("Only Super Admin can re-open rent calculations.");
+      return;
+    }
+    if (!confirm(`Are you sure you want to RE-OPEN rent calculations for ${currentMonth}?`)) return;
+    
+    setSaving(true);
+    try {
+      const updatedRent = { ...rentData, isClosed: false, reopenedAt: new Date().toISOString() };
+      await setDoc(doc(db, "monthly_rent", currentMonth), updatedRent);
+      setRentData(updatedRent);
+      
+      await logActivity(
+        profile?.id || "unknown",
+        profile?.name || "Unknown User",
+        "REOPENED_RENT_MONTH",
+        `Re-opened rent calculations for month: ${currentMonth}`
+      );
+      
+      toast.success("Rent month re-opened successfully!");
+    } catch (error) {
+      console.error("Error reopening month:", error);
+      toast.error("Failed to re-open month.");
     } finally {
       setSaving(false);
     }
@@ -499,15 +530,26 @@ export default function RentPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                {!rentData.isClosed && (
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={handleCloseMonth}
-                    isLoading={saving}
-                  >
-                    <Lock className="w-3.5 h-3.5 mr-1" /> Close Month
-                  </Button>
+                {isSuperAdmin && (
+                  rentData.isClosed ? (
+                    <Button
+                      variant="amber"
+                      size="sm"
+                      onClick={handleReopenMonth}
+                      isLoading={saving}
+                    >
+                      <Unlock className="w-3.5 h-3.5 mr-1" /> Re-open Month (Super Admin)
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={handleCloseMonth}
+                      isLoading={saving}
+                    >
+                      <Lock className="w-3.5 h-3.5 mr-1" /> Close Month (Super Admin)
+                    </Button>
+                  )
                 )}
 
                 <Button
