@@ -16,7 +16,8 @@ import {
   ChevronRight,
   X,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Receipt
 } from "lucide-react";
 import { formatCurrency, getMonthStr } from "@/lib/utils";
 import Avatar from "@/components/layout/Avatar";
@@ -203,13 +204,14 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
         const data = d.data();
         const m = getMonthStr((data.date || data.month || data.createdAt) as any);
         if (m === monthStr) {
-          totalMeals += Number(
-            data.totalMeals !== undefined
+          const count = Number(
+            data.totalMeals
               ? data.totalMeals
-              : data.count !== undefined
+              : data.count !== undefined && data.count !== 0
               ? data.count
               : (data.breakfast || 0) + (data.lunch || 0) + (data.dinner || 0)
           );
+          totalMeals += count;
         }
       });
 
@@ -453,7 +455,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                   </div>
 
                   {/* Top Stats Cards for Selected Month */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     {/* Total Meals */}
                     <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                       <div className="flex items-center justify-between text-zinc-400">
@@ -464,6 +466,22 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                         <span className="text-2xl font-black text-zinc-900 dark:text-white">{totalMealsEaten}</span>
                         <p className="text-[10px] text-zinc-400 mt-0.5">
                           Rate: {loadingRate ? "..." : `৳${currentMealRate.toFixed(2)}/meal`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Meal Cost */}
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-zinc-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Meal Cost</span>
+                        <Receipt className="w-4 h-4 text-purple-500" />
+                      </div>
+                      <div className="mt-2">
+                        <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
+                          ৳{formatCurrency(Math.round(estimatedMealCost))}
+                        </span>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                          {totalMealsEaten} meals × ৳{currentMealRate.toFixed(1)}
                         </p>
                       </div>
                     </div>
@@ -496,8 +514,8 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                       </div>
                     </div>
 
-                    {/* Monthly Status / Balance */}
-                    <div className={`p-4 rounded-2xl border shadow-sm flex flex-col justify-between ${
+                    {/* Monthly Status / Month Extra / Month Due */}
+                    <div className={`p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 sm:col-span-1 ${
                       isDue
                         ? "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50"
                         : isExtra
@@ -527,7 +545,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                             : "Settled"}
                         </span>
                         <p className="text-[10px] text-zinc-400 mt-0.5">
-                          Cost: ৳{formatCurrency(Math.round(estimatedMealCost))}
+                          Net Dep: ৳{formatCurrency(totalDeposited)}
                         </p>
                       </div>
                     </div>
