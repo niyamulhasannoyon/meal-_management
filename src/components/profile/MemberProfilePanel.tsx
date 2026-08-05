@@ -188,6 +188,12 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
       }
 
       // If open/current month, calculate rate on-the-fly
+      const usersSnap = await getDocs(collection(db, "users"));
+      const activeMemberIds = new Set<string>();
+      usersSnap.forEach((d) => {
+        if (d.data().role === "member") activeMemberIds.add(d.id);
+      });
+
       const bazarSnap = await getDocs(collection(db, "bazar_costs"));
       let totalBazar = 0;
       bazarSnap.forEach(d => {
@@ -203,15 +209,24 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
       mealsSnap.forEach(d => {
         const data = d.data();
         const m = getMonthStr((data.date || data.month || data.createdAt) as any);
-        if (m === monthStr) {
+        if (m === monthStr && activeMemberIds.has(data.userId)) {
           const count = Number(
-            data.totalMeals
-              ? data.totalMeals
-              : data.count !== undefined && data.count !== 0
+            data.count !== undefined
               ? data.count
+              : data.totalMeals !== undefined
+              ? data.totalMeals
               : (data.breakfast || 0) + (data.lunch || 0) + (data.dinner || 0)
           );
           totalMeals += count;
+        }
+      });
+
+      const finesSnap = await getDocs(collection(db, "fines"));
+      finesSnap.forEach(d => {
+        const data = d.data();
+        const m = getMonthStr((data.date || data.month || data.createdAt) as any);
+        if (m === monthStr && activeMemberIds.has(data.userId)) {
+          totalMeals += Number(data.amount || 0);
         }
       });
 
@@ -268,13 +283,11 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
 
   // Calculate totals for selected month
   const totalMealsEaten = filteredMeals.reduce((sum, m) => sum + (Number(m.totalMeals) || 0), 0);
-  const mealDeposits = filteredPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   const bazarContributed = filteredBazar.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
   const currentMealRate = mealRateMap[selectedMonth] || 0;
   const estimatedMealCost = totalMealsEaten * currentMealRate;
-  const totalDeposited = mealDeposits + bazarContributed;
-  const balance = totalDeposited - estimatedMealCost;
+  const balance = bazarContributed - estimatedMealCost;
   const isDue = balance < 0;
   const isExtra = balance > 0;
 
@@ -455,7 +468,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                   </div>
 
                   {/* Top Stats Cards for Selected Month */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Total Meals */}
                     <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
                       <div className="flex items-center justify-between text-zinc-400">
@@ -481,22 +494,8 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                           ৳{formatCurrency(Math.round(estimatedMealCost))}
                         </span>
                         <p className="text-[10px] text-zinc-400 mt-0.5">
-                          {totalMealsEaten} meals × ৳{currentMealRate.toFixed(1)}
+                          {totalMealsEaten} meals × ৳{currentMealRate.toFixed(2)}
                         </p>
-                      </div>
-                    </div>
-
-                    {/* Deposited */}
-                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
-                      <div className="flex items-center justify-between text-zinc-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider">Deposited</span>
-                        <Wallet className="w-4 h-4 text-emerald-500" />
-                      </div>
-                      <div className="mt-2">
-                        <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                          ৳{formatCurrency(mealDeposits)}
-                        </span>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">{filteredPayments.length} transactions</p>
                       </div>
                     </div>
 
@@ -515,7 +514,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                     </div>
 
                     {/* Monthly Status / Month Extra / Month Due */}
-                    <div className={`p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 sm:col-span-1 ${
+                    <div className={`p-4 rounded-2xl border shadow-sm flex flex-col justify-between ${
                       isDue
                         ? "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50"
                         : isExtra
@@ -545,7 +544,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                             : "Settled"}
                         </span>
                         <p className="text-[10px] text-zinc-400 mt-0.5">
-                          Net Dep: ৳{formatCurrency(totalDeposited)}
+                          Bazar - Meal Cost
                         </p>
                       </div>
                     </div>
@@ -599,63 +598,7 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                     </div>
                   </div>
 
-                  {/* Daily Deposit History Table for Selected Month */}
-                  <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3.5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/70 flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-emerald-500" />
-                        Meal Deposits ({formatMonthLabel(selectedMonth)})
-                      </h3>
-                      <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-bold border border-emerald-100 dark:border-emerald-900">
-                        {filteredPayments.length} deposits
-                      </span>
-                    </div>
 
-                    <div className="max-h-56 overflow-y-auto">
-                      {filteredPayments.length === 0 ? (
-                        <div className="py-8 text-center text-zinc-400 italic text-xs">
-                          No deposit records found for {formatMonthLabel(selectedMonth)}.
-                        </div>
-                      ) : (
-                        <table className="min-w-full divide-y divide-zinc-100 dark:divide-zinc-800">
-                          <thead className="bg-zinc-50 dark:bg-zinc-950 sticky top-0">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Date</th>
-                              <th className="px-4 py-2 text-left text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Method / Ref</th>
-                              <th className="px-4 py-2 text-right text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-                            {filteredPayments.map((payment) => {
-                              const dateObj = safeParseDate(payment.date);
-                              return (
-                                <tr key={payment.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors">
-                                  <td className="px-4 py-2 text-[11px] font-semibold text-zinc-900 dark:text-white">
-                                    {format(dateObj, "MMM dd, yyyy")}
-                                  </td>
-                                  <td className="px-4 py-2">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="inline-flex items-center rounded-md px-2 py-0.5 text-[9px] font-bold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                                        {payment.paymentMethod || "Cash"}
-                                      </span>
-                                      {payment.reference && (
-                                        <span className="text-[10px] text-zinc-400 truncate max-w-[120px]">
-                                          ({payment.reference})
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-2 text-right text-xs font-black text-emerald-600 dark:text-emerald-400">
-                                    ৳{formatCurrency(payment.amount)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  </div>
 
                   {/* Daily Bazar Contribution Table for Selected Month */}
                   <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
