@@ -56,14 +56,15 @@ export default function Dashboard() {
       // 1. Fetch Users (ONLY role === 'member' for meal calculations)
       const usersSnap = await getDocs(collection(db, "users"));
       const usersList: { id: string; name: string }[] = [];
+      const activeMemberIds = new Set<string>();
       let pendingUsersCount = 0;
 
       usersSnap.forEach((d) => {
         const data = d.data();
-        const role = data.role || "member";
-        if (role !== "pending" && role !== "visitor") {
+        if (data.role === "member") {
           usersList.push({ id: d.id, name: data.name || "Member" });
-        } else {
+          activeMemberIds.add(d.id);
+        } else if (data.role === "pending" || data.role === "visitor") {
           pendingUsersCount++;
         }
       });
@@ -79,7 +80,7 @@ export default function Dashboard() {
         const data = d.data();
         const mStr = getMonthStr(data.date || data.month);
 
-        if (mStr === currentMonth) {
+        if (mStr === currentMonth && activeMemberIds.has(data.userId)) {
           const total = Number(data.count || data.totalMeals || 0);
           userMeals[data.userId] = (userMeals[data.userId] || 0) + total;
 
@@ -103,7 +104,7 @@ export default function Dashboard() {
       finesSnap.forEach((d) => {
         const data = d.data();
         const mStr = getMonthStr(data.date || data.month);
-        if (mStr === currentMonth) {
+        if (mStr === currentMonth && activeMemberIds.has(data.userId)) {
           userFines[data.userId] = (userFines[data.userId] || 0) + Number(data.amount || 0);
         }
       });
@@ -115,13 +116,11 @@ export default function Dashboard() {
       bazarSnap.forEach((d) => {
         const data = d.data();
         const mStr = getMonthStr(data.date || data.month);
-        if (mStr === currentMonth) {
+        const spenderId = data.spenderId || data.userId;
+        if (mStr === currentMonth && spenderId && activeMemberIds.has(spenderId)) {
           const amt = Number(data.amount ?? data.cost ?? 0);
           totalBazar += amt;
-          const spenderId = data.spenderId || data.userId;
-          if (spenderId) {
-            userBazarDeposits[spenderId] = (userBazarDeposits[spenderId] || 0) + amt;
-          }
+          userBazarDeposits[spenderId] = (userBazarDeposits[spenderId] || 0) + amt;
         }
       });
 
@@ -132,7 +131,7 @@ export default function Dashboard() {
         const data = d.data();
         if (data.paymentFor === "rent") return;
         const mStr = data.month || getMonthStr(data.date);
-        if (mStr === currentMonth) {
+        if (mStr === currentMonth && activeMemberIds.has(data.userId)) {
           userDirectDeposits[data.userId] = (userDirectDeposits[data.userId] || 0) + Number(data.amount || 0);
         }
       });

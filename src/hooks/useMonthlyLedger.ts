@@ -34,13 +34,13 @@ export function useMonthlyLedger(targetMonth?: string) {
 
       usersSnap.forEach((d) => {
         const u = d.data();
-        const role = u.role || "member";
-        // All active members (non-pending, non-visitor) are included in meal calculations
-        if (role !== "pending" && role !== "visitor") {
+        // ONLY users set as 'Member (Eats Meals)' (role === 'member') are included in meal calculations
+        if (u.role === "member") {
           usersList.push({ id: d.id, name: u.name || "Member" });
           activeMemberIds.push(d.id);
         }
       });
+      const activeMemberSet = new Set(activeMemberIds);
       const sortedUsersList = sortUsers(usersList);
 
       // Helper function to check if an entry date predates systemStartDate
@@ -89,7 +89,7 @@ export function useMonthlyLedger(targetMonth?: string) {
       }
 
       // 3. Real-time Calculation for Open Month
-      // Fetch meals
+      // Fetch meals (ONLY for active meal members)
       const mealsSnap = await getDocs(collection(db, "meals"));
       const userMeals: Record<string, number> = {};
       const foundMonths = new Set<string>();
@@ -99,7 +99,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         const mStr = getMonthStr(m.date || m.month || m.createdAt);
         if (mStr) foundMonths.add(mStr);
 
-        if (mStr === month) {
+        if (mStr === month && activeMemberSet.has(m.userId)) {
           if (!isBeforeSystemStart(m.date || m.createdAt)) {
             const count = Number(
               m.count !== undefined
@@ -113,7 +113,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         }
       });
 
-      // Fetch fines
+      // Fetch fines (ONLY for active meal members)
       const finesSnap = await getDocs(collection(db, "fines"));
       const userFines: Record<string, number> = {};
       finesSnap.forEach((d) => {
@@ -121,14 +121,14 @@ export function useMonthlyLedger(targetMonth?: string) {
         const fMonth = getMonthStr(f.date || f.month || f.createdAt);
         if (fMonth) foundMonths.add(fMonth);
 
-        if (fMonth === month) {
+        if (fMonth === month && activeMemberSet.has(f.userId)) {
           if (!isBeforeSystemStart(f.date || f.createdAt)) {
             userFines[f.userId] = (userFines[f.userId] || 0) + Number(f.amount || 0);
           }
         }
       });
 
-      // Fetch bazar costs
+      // Fetch bazar costs (ONLY for active meal members)
       const bazarSnap = await getDocs(collection(db, "bazar_costs"));
       const userBazarDeposits: Record<string, number> = {};
       let totalBazar = 0;
@@ -138,19 +138,17 @@ export function useMonthlyLedger(targetMonth?: string) {
         const bMonth = getMonthStr(b.date || b.month || b.createdAt);
         if (bMonth) foundMonths.add(bMonth);
 
-        if (bMonth === month) {
+        const spenderId = b.spenderId || b.userId;
+        if (bMonth === month && spenderId && activeMemberSet.has(spenderId)) {
           if (!isBeforeSystemStart(b.date || b.createdAt)) {
             const amt = Number(b.amount ?? b.cost ?? 0);
             totalBazar += amt;
-            const spenderId = b.spenderId || b.userId;
-            if (spenderId) {
-              userBazarDeposits[spenderId] = (userBazarDeposits[spenderId] || 0) + amt;
-            }
+            userBazarDeposits[spenderId] = (userBazarDeposits[spenderId] || 0) + amt;
           }
         }
       });
 
-      // Fetch direct payments / deposits (excluding rent payments)
+      // Fetch direct payments / deposits (excluding rent payments, ONLY for active meal members)
       const paymentsSnap = await getDocs(collection(db, "payments"));
       const userDirectDeposits: Record<string, number> = {};
 
@@ -162,7 +160,7 @@ export function useMonthlyLedger(targetMonth?: string) {
         const pMonth = getMonthStr(p.date || p.month || p.createdAt);
         if (pMonth) foundMonths.add(pMonth);
 
-        if (pMonth === month) {
+        if (pMonth === month && activeMemberSet.has(p.userId)) {
           if (!isBeforeSystemStart(p.date || p.createdAt)) {
             userDirectDeposits[p.userId] = (userDirectDeposits[p.userId] || 0) + Number(p.amount || 0);
           }
