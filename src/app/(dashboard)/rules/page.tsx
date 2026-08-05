@@ -60,7 +60,7 @@ export default function RulesAndFinesPage() {
   const [fineReason, setFineReason] = useState("");
   const [editingFineId, setEditingFineId] = useState<string | null>(null);
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "super_admin" || profile?.role === "admin" || profile?.role === "moderator";
 
   useEffect(() => {
     fetchData();
