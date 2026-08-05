@@ -418,8 +418,8 @@ export default function LedgerPage() {
         </TableContainer>
       </motion.div>
 
-      {/* Member Profile Drawer */}
-      <MemberProfilePanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+      {/* Member Profile Modal */}
+      <MemberProfilePanel userId={selectedUserId} onClose={() => setSelectedUserId(null)} initialMonth={month} />
 
       {/* Deposit Modal */}
       <Dialog
