@@ -508,6 +508,15 @@ export default function MealsPage() {
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* Total Meals Indicator Badge */}
+          <div className="flex items-center space-x-2 bg-brand/10 border border-brand/30 px-3 py-1.5 rounded-xl">
+            <Utensils className="w-4 h-4 text-brand" />
+            <div className="text-left">
+              <span className="text-[10px] font-extrabold uppercase text-zinc-500 dark:text-zinc-400 block leading-none">Total Daily Meals</span>
+              <span className="text-sm font-black text-brand leading-tight">{totalDailyMeals} Meals</span>
+            </div>
+          </div>
+
           <Input
             type="date"
             value={selectedDate}
@@ -572,7 +581,12 @@ export default function MealsPage() {
         </div>
 
         {/* Status Pills & Progress */}
-        <div className="flex items-center space-x-2 self-start md:self-auto">
+        <div className="flex items-center space-x-2 self-start md:self-auto flex-wrap gap-y-1">
+          {/* Prominent Total Meals Badge */}
+          <span className="text-xs font-black px-3 py-1 rounded-full bg-brand text-white shadow-xs flex items-center gap-1.5">
+            <Utensils className="w-3.5 h-3.5" /> Total Meals: {totalDailyMeals}
+          </span>
+
           <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" /> {submittedCount} Submitted
           </span>
@@ -597,9 +611,12 @@ export default function MealsPage() {
         <div className="lg:col-span-2 space-y-3">
           {/* Section Header & Filter Tabs */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
               <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-500">
                 Active Members ({users.length}) — {selectedDate}
+              </span>
+              <span className="text-xs font-extrabold text-brand bg-brand/10 border border-brand/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <Utensils className="w-3 h-3" /> Total Today: {totalDailyMeals} Meals
               </span>
             </div>
 

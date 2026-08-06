@@ -35,6 +35,7 @@ export default function Dashboard() {
     mealRate: 0,
     totalMeals: 0,
     totalBazar: 0,
+    todayMeals: 0,
   });
   const [myBalance, setMyBalance] = useState<{ amount: number; isDue: boolean } | null>(null);
   const [mealEntries, setMealEntries] = useState<Record<string, { breakfast: number; lunch: number; dinner: number }>>({});
@@ -74,26 +75,39 @@ export default function Dashboard() {
       const userMeals: Record<string, number> = {};
       const heatMapData: Record<string, { breakfast: number; lunch: number; dinner: number }> = {};
       let loggedTodayCount = 0;
+      let todayMealsSum = 0;
       const todayStr = format(new Date(), "yyyy-MM-dd");
 
       mealsSnap.forEach((d) => {
         const data = d.data();
         const mStr = getMonthStr(data.date || data.month);
 
-        if (mStr === currentMonth && activeMemberIds.has(data.userId)) {
-          const total = Number(data.count || data.totalMeals || 0);
-          userMeals[data.userId] = (userMeals[data.userId] || 0) + total;
+        if (activeMemberIds.has(data.userId)) {
+          const total = Number(
+            data.totalMeals !== undefined
+              ? data.totalMeals
+              : data.count !== undefined
+              ? data.count
+              : (data.breakfast || 0) + (data.lunch || 0) + (data.dinner || 0)
+          );
 
-          if (data.userId === profile?.id) {
-            heatMapData[data.date] = {
-              breakfast: Number(data.breakfast || (total > 0 ? 0.5 : 0)),
-              lunch: Number(data.lunch || (total > 0 ? 1 : 0)),
-              dinner: Number(data.dinner || (total > 0 ? 1 : 0)),
-            };
+          if (mStr === currentMonth) {
+            userMeals[data.userId] = (userMeals[data.userId] || 0) + total;
+
+            if (data.userId === profile?.id) {
+              heatMapData[data.date] = {
+                breakfast: Number(data.breakfast || (total > 0 ? 0.5 : 0)),
+                lunch: Number(data.lunch || (total > 0 ? 1 : 0)),
+                dinner: Number(data.dinner || (total > 0 ? 1 : 0)),
+              };
+            }
           }
 
-          if (data.date === todayStr && total > 0) {
-            loggedTodayCount++;
+          if (data.date === todayStr) {
+            todayMealsSum += total;
+            if (data.isSubmitted !== false) {
+              loggedTodayCount++;
+            }
           }
         }
       });
@@ -150,6 +164,7 @@ export default function Dashboard() {
         mealRate: ledgerResult.mealRate,
         totalMeals: ledgerResult.totalMeals,
         totalBazar: ledgerResult.totalBazar,
+        todayMeals: todayMealsSum,
       });
 
       setMealEntries(heatMapData);
@@ -282,9 +297,9 @@ export default function Dashboard() {
         <StatCard
           title="Total Meals Eaten"
           value={loading ? "..." : stats.totalMeals}
-          subtitle="Across active meal members"
+          subtitle={loading ? "..." : `Today: ${stats.todayMeals} meals | Month total`}
           variant="default"
-          icon={<Utensils className="w-5 h-5 text-zinc-600" />}
+          icon={<Utensils className="w-5 h-5 text-brand" />}
         />
         <StatCard
           title="Personal Balance"
