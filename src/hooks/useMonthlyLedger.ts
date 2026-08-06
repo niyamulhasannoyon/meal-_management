@@ -49,12 +49,9 @@ export function useMonthlyLedger(targetMonth?: string) {
       // Helper function to check if an entry date predates systemStartDate
       const isBeforeSystemStart = (dateVal: any) => {
         if (!systemStartDate) return false;
-        const dStr = getMonthStr(dateVal);
-        if (!dStr) return false;
-        const systemStartMonth = getMonthStr(systemStartDate);
-        // If systemStartDate is in a future month compared to target month, don't filter out target month records
-        if (systemStartMonth > month) return false;
-        return dStr < systemStartDate;
+        const entryDateStr = getDateStr(dateVal);
+        if (!entryDateStr) return false;
+        return entryDateStr < systemStartDate;
       };
 
       // 2. Check if month is already closed in monthly_ledgers
