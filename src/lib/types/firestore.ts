@@ -23,8 +23,16 @@ export interface MealEntry {
   userId: string;
   userName?: string;
   date: string; // YYYY-MM-DD
-  count: number; // 0, 0.5, 1, 1.5, 2, etc.
-  month: string; // YYYY-MM
+  breakfast?: number;
+  lunch?: number;
+  dinner?: number;
+  totalMeals?: number;
+  count?: number; // 0, 0.5, 1, 1.5, 2, etc.
+  month?: string; // YYYY-MM
+  isSubmitted?: boolean;
+  submittedAt?: string;
+  submittedBy?: string;
+  submittedById?: string;
   updatedAt?: Timestamp | Date | string;
   updatedBy?: string;
 }
