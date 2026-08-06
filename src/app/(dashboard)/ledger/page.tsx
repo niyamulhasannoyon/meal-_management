@@ -341,6 +341,26 @@ export default function LedgerPage() {
         </div>
       </motion.div>
 
+      {/* Minimum Guaranteed Meal Banner if Active */}
+      {settings?.enableMinimumMealRule && (
+        <motion.div
+          variants={fadeIn}
+          className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-100 flex items-center justify-between gap-3 text-xs"
+        >
+          <div className="flex items-center space-x-2">
+            <Utensils className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>
+              <strong>Minimum Meal Rule Active:</strong> Permanent members are billed for a minimum of{" "}
+              <strong>{ledgerResult?.effectiveMinMeals ?? settings?.minimumMonthlyMeals ?? 12} meals</strong> this month
+              (pro-rated mid-month if applicable). Deficits appear in <em>Min. Quota Adj.</em>
+            </span>
+          </div>
+          <Badge variant="warning" className="text-[10px] shrink-0">
+            {ledgerResult?.effectiveMinMeals ?? settings?.minimumMonthlyMeals ?? 12} Min. Meals
+          </Badge>
+        </motion.div>
+      )}
+
       {/* Member Ledger Table */}
       <motion.div variants={fadeIn}>
         <TableContainer>
@@ -350,6 +370,9 @@ export default function LedgerPage() {
                 <TableHead>Member</TableHead>
                 <TableHead className="text-center">Meals</TableHead>
                 <TableHead className="text-center">Fines</TableHead>
+                {ledgerResult?.users.some((u) => u.minMealAdjustment && u.minMealAdjustment > 0) && (
+                  <TableHead className="text-center text-brand">Min. Quota Adj.</TableHead>
+                )}
                 <TableHead className="text-right">Meal Cost</TableHead>
                 <TableHead className="text-right">Total Deposits</TableHead>
                 <TableHead className="text-right">Net Balance</TableHead>
@@ -359,13 +382,13 @@ export default function LedgerPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-zinc-400">
+                  <TableCell colSpan={8} className="text-center py-8 text-zinc-400">
                     Computing ledger data...
                   </TableCell>
                 </TableRow>
               ) : filteredMembers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-zinc-400">
+                  <TableCell colSpan={8} className="text-center py-8 text-zinc-400">
                     No members match search for {month}.
                   </TableCell>
                 </TableRow>
@@ -373,21 +396,32 @@ export default function LedgerPage() {
                 filteredMembers.map((member) => {
                   const isDue = member.balance < 0;
                   const isExtra = member.balance > 0;
+                  const hasMinAdjCol = ledgerResult?.users.some((u) => u.minMealAdjustment && u.minMealAdjustment > 0);
 
                   return (
                     <TableRow key={member.id}>
                       <TableCell
-                        className="font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer"
+                        className="font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer flex items-center gap-1.5"
                         onClick={() => setSelectedUserId(member.id)}
                       >
-                        {member.name}
+                        <span>{member.name}</span>
+                        {member.isPermanent && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-amber-500/40 text-amber-600 dark:text-amber-400">
+                            Permanent
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center font-bold text-zinc-700 dark:text-zinc-300">
-                        {member.totalMeals - member.fineMeals}
+                        {member.regularMeals ?? (member.totalMeals - member.fineMeals - (member.minMealAdjustment || 0))}
                       </TableCell>
                       <TableCell className="text-center font-bold text-amberAccent-600">
                         {member.fineMeals > 0 ? `+${member.fineMeals}` : "0"}
                       </TableCell>
+                      {hasMinAdjCol && (
+                        <TableCell className="text-center font-black text-brand">
+                          {member.minMealAdjustment && member.minMealAdjustment > 0 ? `+${member.minMealAdjustment}` : "0"}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right font-medium text-zinc-700 dark:text-zinc-300">
                         ৳{formatCurrency(member.mealCost)}
                       </TableCell>

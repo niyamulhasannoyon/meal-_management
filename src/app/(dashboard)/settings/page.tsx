@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Save, ShieldAlert, Building, Crown, Lock, UtensilsCrossed } from "lucide-react";
+import { Settings, Save, ShieldAlert, Building, Crown, Lock, UtensilsCrossed, Trash2 } from "lucide-react";
 import { useMessSettings } from "@/hooks/useMessSettings";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -151,6 +151,100 @@ export default function SettingsPage() {
                   disabled={!isSuperAdmin}
                 />
               </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Minimum Guaranteed Meals Card (Permanent Members Only) */}
+        <motion.div variants={fadeIn}>
+          <Card className="border-amber-500/30 dark:border-amber-900/50">
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle className="flex items-center gap-2 text-base text-amber-600 dark:text-amber-400">
+                  <ShieldAlert className="w-5 h-5 text-amber-500" /> Permanent Member Minimum Meal Guarantee
+                </CardTitle>
+                {formData.enableMinimumMealRule && (
+                  <Badge variant="warning" className="text-xs font-bold">
+                    Active System ({formData.minimumMonthlyMeals || 12} Meals Minimum / Full Month)
+                  </Badge>
+                )}
+              </div>
+              <CardDescription>
+                Exclusively for Permanent Members (<code className="text-brand font-mono text-[11px]">isPermanent == true</code>).
+                If a permanent member consumes fewer meals than the monthly minimum (pro-rated for mid-month starts), they are billed up to the minimum quota. Non-permanent members are exempt.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-5">
+              <div className="flex items-center justify-between p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+                <div>
+                  <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100 block">
+                    Enable Minimum Guaranteed Meal Rule
+                  </span>
+                  <span className="text-xs text-zinc-500">
+                    Automatically adjust permanent members' calculated meals up to the minimum quota.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!formData.enableMinimumMealRule}
+                  onChange={(e) => setFormData({ ...formData, enableMinimumMealRule: e.target.checked })}
+                  disabled={!isSuperAdmin}
+                  className="w-5 h-5 rounded accent-brand cursor-pointer disabled:opacity-50"
+                />
+              </div>
+
+              {formData.enableMinimumMealRule && (
+                <div className="space-y-4 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      label="Monthly Minimum Meals Quota (Full Month)"
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={formData.minimumMonthlyMeals ?? 12}
+                      onChange={(e) =>
+                        setFormData({ ...formData, minimumMonthlyMeals: Math.max(1, parseInt(e.target.value) || 12) })
+                      }
+                      disabled={!isSuperAdmin}
+                      helperText="Default quota for a complete full month (e.g. 12 meals)."
+                    />
+
+                    {/* Pro-Rating Explanation Box */}
+                    <div className="p-3.5 rounded-xl bg-brand/5 border border-brand/20 text-xs space-y-1">
+                      <span className="font-bold text-brand block flex items-center gap-1">
+                        <UtensilsCrossed className="w-3.5 h-3.5" /> Pro-Rated Mid-Month Rule
+                      </span>
+                      <p className="text-zinc-600 dark:text-zinc-300">
+                        If the mess started mid-month (e.g. 15th of a 30-day month), the minimum quota for that month will automatically scale:
+                      </p>
+                      <div className="font-mono text-[11px] font-bold text-brand bg-brand/10 p-1.5 rounded mt-1">
+                        {formData.minimumMonthlyMeals || 12} meals × (Active Days / Total Days)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Super Admin Delete / Purge Button */}
+                  {isSuperAdmin && (
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-red-500 hover:bg-red-50 border-red-200 dark:border-red-900/50"
+                        onClick={() => {
+                          if (confirm("Are you sure you want to disable and delete the Minimum Guaranteed Meal Rule system?")) {
+                            setFormData({ ...formData, enableMinimumMealRule: false, minimumMonthlyMeals: 12 });
+                            saveSettings({ enableMinimumMealRule: false, minimumMonthlyMeals: 12 });
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1.5" /> Delete / Disable Minimum Meal System
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>

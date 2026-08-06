@@ -45,7 +45,7 @@ const item = {
 };
 
 export default function RulesAndFinesPage() {
-  const { profile } = useAuth();
+  const { profile, settings } = useAuth();
   const [rules, setRules] = useState<Rule[]>([]);
   const [fines, setFines] = useState<Fine[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -226,6 +226,43 @@ export default function RulesAndFinesPage() {
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Terms of stay and system of fines.</p>
         </div>
       </div>
+
+      {/* Active System Minimum Meal Guarantee Card */}
+      {settings?.enableMinimumMealRule && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-start space-x-3">
+            <div className="p-2.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+              <Scale className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-sm tracking-tight text-amber-900 dark:text-amber-100">
+                  📌 Minimum Guaranteed Meal Rule Active (Permanent Members Only)
+                </h3>
+                <Badge variant="warning" className="text-[10px]">
+                  {settings.minimumMonthlyMeals || 12} Meals / Month Quota
+                </Badge>
+              </div>
+              <p className="text-xs opacity-90 mt-1">
+                Permanent members must consume or be billed for a minimum of <strong>{settings.minimumMonthlyMeals || 12} meals</strong> per month (pro-rated if mess starts mid-month). If actual eaten meals are lower, an adjustment will automatically bring total billed meals to the minimum quota. Non-permanent members are exempt.
+              </p>
+            </div>
+          </div>
+
+          {profile?.role === "super_admin" && (
+            <a
+              href="/settings"
+              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-all shrink-0 self-end sm:self-auto shadow-xs"
+            >
+              Configure / Disable
+            </a>
+          )}
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Rules Section */}

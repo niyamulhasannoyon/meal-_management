@@ -424,4 +424,42 @@ describe('calculateLedger', () => {
     expect(result.totalBazar).toBe(0);
     expect(result.users).toEqual([]);
   });
+
+  it('applies Minimum Guaranteed Meals quota for permanent members when enabled', () => {
+    const usersList = [
+      { id: 'perm1', name: 'Permanent User', isPermanent: true },
+      { id: 'temp1', name: 'Temporary User', isPermanent: false },
+    ];
+
+    const input: CalculationInput = {
+      users: usersList,
+      totalBazar: 1200,
+      userMeals: { perm1: 6, temp1: 6 }, // perm1 ate only 6 meals out of 12 min quota
+      userFines: {},
+      userDirectDeposits: {},
+      userBazarDeposits: {},
+      minimumMealConfig: {
+        enabled: true,
+        minimumMonthlyMeals: 12,
+        month: '2026-08',
+      },
+    };
+
+    const result = calculateLedger(input);
+
+    // Permanent user gets +6 adjustment meals -> total 12
+    const perm = result.users.find((u) => u.id === 'perm1')!;
+    expect(perm.regularMeals).toBe(6);
+    expect(perm.minMealAdjustment).toBe(6);
+    expect(perm.totalMeals).toBe(12);
+
+    // Temporary user is exempt -> total 6
+    const temp = result.users.find((u) => u.id === 'temp1')!;
+    expect(temp.regularMeals).toBe(6);
+    expect(temp.minMealAdjustment).toBe(0);
+    expect(temp.totalMeals).toBe(6);
+
+    // Total meals in system = 12 + 6 = 18
+    expect(result.totalMeals).toBe(18);
+  });
 });

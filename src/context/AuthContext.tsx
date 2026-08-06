@@ -26,6 +26,8 @@ export interface SystemSettings {
   allowMemberEditing: boolean;
   autoSubmitEnabled: boolean;
   autoSubmitHour: number;
+  enableMinimumMealRule?: boolean;
+  minimumMonthlyMeals?: number;
 }
 
 interface AuthContextType {
@@ -64,6 +66,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           allowMemberEditing: data.allowMemberEditing !== undefined ? Boolean(data.allowMemberEditing) : true,
           autoSubmitEnabled: data.autoSubmitEnabled !== undefined ? Boolean(data.autoSubmitEnabled) : true,
           autoSubmitHour: data.autoSubmitHour !== undefined ? Number(data.autoSubmitHour) : 22,
+          enableMinimumMealRule: data.enableMinimumMealRule !== undefined ? Boolean(data.enableMinimumMealRule) : false,
+          minimumMonthlyMeals: data.minimumMonthlyMeals !== undefined ? Number(data.minimumMonthlyMeals) : 12,
         });
       } else {
         setSettings({
@@ -76,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           allowMemberEditing: true,
           autoSubmitEnabled: true,
           autoSubmitHour: 22,
+          enableMinimumMealRule: false,
+          minimumMonthlyMeals: 12,
         });
       }
     });

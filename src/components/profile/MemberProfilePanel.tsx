@@ -420,9 +420,15 @@ export default function MemberProfilePanel({ userId, onClose, initialMonth }: Me
                       </div>
                       <div className="mt-2">
                         <span className="text-2xl font-black text-zinc-900 dark:text-white">{totalMealsEaten}</span>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">
-                          Rate: {loadingLedger ? "..." : `৳${currentMealRate.toFixed(2)}/meal`}
-                        </p>
+                        {userCalc?.minMealAdjustment && userCalc.minMealAdjustment > 0 ? (
+                          <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                            (Inc. +{userCalc.minMealAdjustment} min. quota adj.)
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-zinc-400 mt-0.5">
+                            Rate: {loadingLedger ? "..." : `৳${currentMealRate.toFixed(2)}/meal`}
+                          </p>
+                        )}
                       </div>
                     </div>
 

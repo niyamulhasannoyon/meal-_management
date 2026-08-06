@@ -23,20 +23,23 @@ export function useMonthlyLedger(targetMonth?: string) {
   const fetchLedgerData = async () => {
     setLoading(true);
     try {
-      // Fetch system start date if exists
+      // Fetch system start date and minimum meal settings if exists
       const settingsDoc = await getDoc(doc(db, "system_config", "settings"));
-      const systemStartDate = settingsDoc.exists() ? settingsDoc.data()?.systemStartDate || "" : "";
+      const settingsData = settingsDoc.exists() ? settingsDoc.data() : {};
+      const systemStartDate = settingsData?.systemStartDate || "";
+      const enableMinimumMealRule = !!settingsData?.enableMinimumMealRule;
+      const minimumMonthlyMeals = Number(settingsData?.minimumMonthlyMeals ?? 12);
 
       // 1. Fetch all users
       const usersSnap = await getDocs(collection(db, "users"));
-      const usersList: { id: string; name: string }[] = [];
+      const usersList: { id: string; name: string; isPermanent?: boolean }[] = [];
       const activeMemberIds: string[] = [];
 
       usersSnap.forEach((d) => {
         const u = d.data();
         // ONLY users set as 'Member (Eats Meals)' (role === 'member') are included in meal calculations
         if (u.role === "member") {
-          usersList.push({ id: d.id, name: u.name || "Member" });
+          usersList.push({ id: d.id, name: u.name || "Member", isPermanent: u.isPermanent === true });
           activeMemberIds.push(d.id);
         }
       });
@@ -46,7 +49,7 @@ export function useMonthlyLedger(targetMonth?: string) {
       // Helper function to check if an entry date predates systemStartDate
       const isBeforeSystemStart = (dateVal: any) => {
         if (!systemStartDate) return false;
-        const dStr = getDateStr(dateVal);
+        const dStr = getMonthStr(dateVal);
         if (!dStr) return false;
         const systemStartMonth = getMonthStr(systemStartDate);
         // If systemStartDate is in a future month compared to target month, don't filter out target month records
@@ -70,8 +73,11 @@ export function useMonthlyLedger(targetMonth?: string) {
         const savedUsersList = (existingData.users || existingData.memberSummaries || []).map((u: any) => ({
           id: u.id || u.userId,
           name: u.name || u.userName || "Member",
+          isPermanent: u.isPermanent,
+          regularMeals: Number(u.regularMeals ?? u.mealsCount ?? u.totalMeals ?? 0),
+          fineMeals: Number(u.fineMeals ?? u.finesCount ?? 0),
+          minMealAdjustment: Number(u.minMealAdjustment ?? 0),
           totalMeals: Number(u.totalMeals || 0),
-          fineMeals: Number(u.fineMeals || 0),
           mealCost: Number(u.mealCost || 0),
           deposits: Number(u.deposits ?? u.totalDeposits ?? 0),
           balance: Number(u.balance ?? u.netBalance ?? 0),
@@ -81,6 +87,7 @@ export function useMonthlyLedger(targetMonth?: string) {
           mealRate: savedMealRate,
           totalMeals: savedTotalMeals,
           totalBazar: savedTotalBazar,
+          effectiveMinMeals: existingData.effectiveMinMeals,
           users: savedUsersList,
         });
 
@@ -182,6 +189,12 @@ export function useMonthlyLedger(targetMonth?: string) {
         userBazarDeposits,
         totalBazar,
         users: sortedUsersList,
+        minimumMealConfig: {
+          enabled: enableMinimumMealRule,
+          minimumMonthlyMeals: minimumMonthlyMeals,
+          month,
+          systemStartDate: systemStartDate,
+        },
       });
 
       setLedgerResult(result);

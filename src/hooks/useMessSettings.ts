@@ -15,6 +15,8 @@ export interface MessSettings {
   allowMemberEditing: boolean;
   autoSubmitEnabled: boolean;
   autoSubmitHour: number;
+  enableMinimumMealRule?: boolean;
+  minimumMonthlyMeals?: number;
 }
 
 export function useMessSettings() {
@@ -32,6 +34,8 @@ export function useMessSettings() {
     allowMemberEditing: true,
     autoSubmitEnabled: true,
     autoSubmitHour: 22,
+    enableMinimumMealRule: false,
+    minimumMonthlyMeals: 12,
   });
 
   useEffect(() => {
@@ -46,6 +50,8 @@ export function useMessSettings() {
         allowMemberEditing: settings.allowMemberEditing !== undefined ? settings.allowMemberEditing : true,
         autoSubmitEnabled: settings.autoSubmitEnabled !== undefined ? settings.autoSubmitEnabled : true,
         autoSubmitHour: settings.autoSubmitHour !== undefined ? settings.autoSubmitHour : 22,
+        enableMinimumMealRule: settings.enableMinimumMealRule !== undefined ? settings.enableMinimumMealRule : false,
+        minimumMonthlyMeals: settings.minimumMonthlyMeals !== undefined ? settings.minimumMonthlyMeals : 12,
       });
       setLoading(false);
     }
@@ -67,6 +73,8 @@ export function useMessSettings() {
           defaultLunch: Number(newState.defaultLunch),
           defaultDinner: Number(newState.defaultDinner),
           autoSubmitHour: Number(newState.autoSubmitHour),
+          minimumMonthlyMeals: Number(newState.minimumMonthlyMeals || 12),
+          enableMinimumMealRule: Boolean(newState.enableMinimumMealRule),
         },
         { merge: true }
       );
