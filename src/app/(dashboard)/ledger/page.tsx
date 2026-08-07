@@ -11,7 +11,7 @@ import {
   Utensils,
   Plus,
   History,
-  Download,
+  FileText,
   Trash2,
   Edit3,
   CheckCircle,
@@ -201,27 +201,91 @@ export default function LedgerPage() {
     }
   };
 
-  const handleExportCSV = () => {
+  const handleExportPDF = async () => {
     if (!ledgerResult) return;
-    const headers = ["Member", "Total Meals", "Fine Meals", "Meal Cost (TK)", "Deposits (TK)", "Net Balance (TK)", "Status"];
-    const rows = ledgerResult.users.map((u) => [
-      `"${u.name}"`,
-      u.totalMeals,
-      u.fineMeals,
-      Math.round(u.mealCost),
-      Math.round(u.deposits),
-      Math.round(u.balance),
-      u.balance < 0 ? "Due" : u.balance > 0 ? "Extra" : "Settled",
-    ]);
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const { default: autoTable } = await import("jspdf-autotable");
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `mess_ledger_${month}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const doc = new jsPDF();
+      const monthFormatted = format(new Date(`${month}-01`), "MMMM yyyy");
+      const messName = settings?.messName || "Meal Management System";
+
+      // Header Title
+      doc.setFontSize(20);
+      doc.setTextColor(24, 24, 27);
+      doc.text(messName, 14, 20);
+
+      doc.setFontSize(12);
+      doc.setTextColor(113, 113, 122);
+      doc.text(`Monthly Meal Ledger Report - ${monthFormatted}`, 14, 28);
+
+      // Summary Card / Box
+      doc.setDrawColor(228, 228, 231);
+      doc.setFillColor(244, 244, 245);
+      doc.roundedRect(14, 34, 182, 18, 3, 3, "FD");
+
+      doc.setFontSize(10);
+      doc.setTextColor(24, 24, 27);
+      doc.text(`Calculated Meal Rate: TK ${ledgerResult.mealRate.toFixed(2)}`, 20, 45);
+      doc.text(`Total Bazar Cost: TK ${formatCurrency(ledgerResult.totalBazar)}`, 80, 45);
+      doc.text(`Total Meals Count: ${ledgerResult.totalMeals}`, 145, 45);
+
+      // Table Header & Rows
+      const headers = [["Member", "Meals", "Fines", "Meal Cost", "Deposits", "Net Balance", "Status"]];
+      const rows = ledgerResult.users.map((u) => [
+        u.name,
+        u.totalMeals.toString(),
+        u.fineMeals.toString(),
+        `TK ${Math.round(u.mealCost)}`,
+        `TK ${Math.round(u.deposits)}`,
+        `TK ${Math.round(u.balance)}`,
+        u.balance < 0 ? "Due" : u.balance > 0 ? "Extra" : "Settled",
+      ]);
+
+      autoTable(doc, {
+        startY: 58,
+        head: headers,
+        body: rows,
+        headStyles: {
+          fillColor: [24, 24, 27],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 9,
+        },
+        alternateRowStyles: {
+          fillColor: [250, 250, 250],
+        },
+        styles: {
+          fontSize: 9,
+          cellPadding: 4,
+          valign: "middle",
+        },
+        columnStyles: {
+          0: { fontStyle: "bold" },
+          5: { fontStyle: "bold" },
+        },
+      });
+
+      // Page Footer
+      const totalPages = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(161, 161, 170);
+        doc.text(
+          `Generated on ${format(new Date(), "MMM d, yyyy h:mm a")} | Page ${i} of ${totalPages}`,
+          14,
+          doc.internal.pageSize.height - 10
+        );
+      }
+
+      doc.save(`mess_ledger_${month}.pdf`);
+      toast.success("PDF report downloaded successfully!");
+    } catch (err) {
+      console.error("Error exporting PDF:", err);
+      toast.error("Failed to export PDF report.");
+    }
   };
 
   const filteredMembers =
@@ -274,8 +338,8 @@ export default function LedgerPage() {
             <History className="w-4 h-4 mr-1 text-brand" /> Payments Log
           </Button>
 
-          <Button variant="outline" size="sm" onClick={handleExportCSV}>
-            <Download className="w-4 h-4 mr-1" /> Export CSV
+          <Button variant="outline" size="sm" onClick={handleExportPDF}>
+            <FileText className="w-4 h-4 mr-1 text-rose-500" /> Export PDF
           </Button>
 
           {isSuperAdmin && (
