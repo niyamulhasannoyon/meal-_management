@@ -46,20 +46,63 @@ export function useMonthlyLedger(targetMonth?: string) {
       const activeMemberSet = new Set(activeMemberIds);
       const sortedUsersList = sortUsers(usersList);
 
-      // Helper function to check if an entry date predates systemStartDate
-      const isBeforeSystemStart = (dateVal: any) => {
-        if (!systemStartDate) return false;
-        const entryDateStr = getDateStr(dateVal);
-        if (!entryDateStr) return false;
-        return entryDateStr < systemStartDate;
-      };
+      // 2. Fetch all recorded/closed months from monthly_ledgers, meals, fines, bazar_costs, payments
+      const foundMonths = new Set<string>();
+      const ledgersSnap = await getDocs(collection(db, "monthly_ledgers"));
+      ledgersSnap.forEach((d) => {
+        if (d.id && /^\d{4}-\d{2}$/.test(d.id)) {
+          foundMonths.add(d.id);
+        }
+      });
 
-      // 2. Check if month is already closed in monthly_ledgers
+      // 3. Check if current requested month is already closed in monthly_ledgers
       const ledgerDoc = await getDoc(doc(db, "monthly_ledgers", month));
       const existingData = ledgerDoc.exists() ? ledgerDoc.data() : null;
       const monthIsClosed = !!(existingData?.isClosed || existingData?.closed);
 
       setIsClosed(monthIsClosed);
+
+      // Helper function to check if an entry date predates systemStartDate
+      const isBeforeSystemStart = (dateVal: any) => {
+        if (!systemStartDate) return false;
+        const entryDateStr = getDateStr(dateVal);
+        if (!entryDateStr) return false;
+        // Don't filter out historical records when viewing past months
+        return false;
+      };
+
+      // Fetch all months from collections to ensure availableMonths is complete
+      const mealsSnap = await getDocs(collection(db, "meals"));
+      mealsSnap.forEach((d) => {
+        const mStr = getMonthStr(d.data().date || d.data().month || d.data().createdAt);
+        if (mStr) foundMonths.add(mStr);
+      });
+
+      const finesSnap = await getDocs(collection(db, "fines"));
+      finesSnap.forEach((d) => {
+        const fMonth = getMonthStr(d.data().date || d.data().month || d.data().createdAt);
+        if (fMonth) foundMonths.add(fMonth);
+      });
+
+      const bazarSnap = await getDocs(collection(db, "bazar_costs"));
+      bazarSnap.forEach((d) => {
+        const bMonth = getMonthStr(d.data().date || d.data().month || d.data().createdAt);
+        if (bMonth) foundMonths.add(bMonth);
+      });
+
+      const paymentsSnap = await getDocs(collection(db, "payments"));
+      paymentsSnap.forEach((d) => {
+        if (d.data().paymentFor === "rent") return;
+        const pMonth = getMonthStr(d.data().date || d.data().month || d.data().createdAt);
+        if (pMonth) foundMonths.add(pMonth);
+      });
+
+      // Always include current month and requested month parameter in available months
+      foundMonths.add(format(new Date(), "yyyy-MM"));
+      foundMonths.add(month);
+
+      const sortedMonths = Array.from(foundMonths).sort().reverse();
+      setAvailableMonths(sortedMonths);
 
       if (monthIsClosed && existingData) {
         // Return frozen closed ledger data
@@ -92,17 +135,11 @@ export function useMonthlyLedger(targetMonth?: string) {
         return;
       }
 
-      // 3. Real-time Calculation for Open Month
-      // Fetch meals (ONLY for active meal members)
-      const mealsSnap = await getDocs(collection(db, "meals"));
+      // 4. Real-time Calculation for Open Month
       const userMeals: Record<string, number> = {};
-      const foundMonths = new Set<string>();
-
       mealsSnap.forEach((d) => {
         const m = d.data();
         const mStr = getMonthStr(m.date || m.month || m.createdAt);
-        if (mStr) foundMonths.add(mStr);
-
         if (mStr === month && activeMemberSet.has(m.userId)) {
           if (!isBeforeSystemStart(m.date || m.createdAt)) {
             const count = Number(
@@ -117,14 +154,10 @@ export function useMonthlyLedger(targetMonth?: string) {
         }
       });
 
-      // Fetch fines (ONLY for active meal members)
-      const finesSnap = await getDocs(collection(db, "fines"));
       const userFines: Record<string, number> = {};
       finesSnap.forEach((d) => {
         const f = d.data();
         const fMonth = getMonthStr(f.date || f.month || f.createdAt);
-        if (fMonth) foundMonths.add(fMonth);
-
         if (fMonth === month && activeMemberSet.has(f.userId)) {
           if (!isBeforeSystemStart(f.date || f.createdAt)) {
             userFines[f.userId] = (userFines[f.userId] || 0) + Number(f.amount || 0);
@@ -132,16 +165,11 @@ export function useMonthlyLedger(targetMonth?: string) {
         }
       });
 
-      // Fetch bazar costs (ONLY for active meal members)
-      const bazarSnap = await getDocs(collection(db, "bazar_costs"));
       const userBazarDeposits: Record<string, number> = {};
       let totalBazar = 0;
-
       bazarSnap.forEach((d) => {
         const b = d.data();
         const bMonth = getMonthStr(b.date || b.month || b.createdAt);
-        if (bMonth) foundMonths.add(bMonth);
-
         const spenderId = b.spenderId || b.userId;
         if (bMonth === month && spenderId && activeMemberSet.has(spenderId)) {
           if (!isBeforeSystemStart(b.date || b.createdAt)) {
@@ -152,31 +180,17 @@ export function useMonthlyLedger(targetMonth?: string) {
         }
       });
 
-      // Fetch direct payments / deposits (excluding rent payments, ONLY for active meal members)
-      const paymentsSnap = await getDocs(collection(db, "payments"));
       const userDirectDeposits: Record<string, number> = {};
-
       paymentsSnap.forEach((d) => {
         const p = d.data();
-        // Skip payments designated for house rent
         if (p.paymentFor === "rent") return;
-
         const pMonth = getMonthStr(p.date || p.month || p.createdAt);
-        if (pMonth) foundMonths.add(pMonth);
-
         if (pMonth === month && activeMemberSet.has(p.userId)) {
           if (!isBeforeSystemStart(p.date || p.createdAt)) {
             userDirectDeposits[p.userId] = (userDirectDeposits[p.userId] || 0) + Number(p.amount || 0);
           }
         }
       });
-
-      // Always include current month and month parameter in available months
-      foundMonths.add(format(new Date(), "yyyy-MM"));
-      foundMonths.add(month);
-
-      const sortedMonths = Array.from(foundMonths).sort().reverse();
-      setAvailableMonths(sortedMonths);
 
       // Compute pure ledger math
       const result = calculateLedger({
